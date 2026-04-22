@@ -1,0 +1,131 @@
+{
+  "sections": [
+    {
+      "name": "Reporter & Laboratory Information",
+      "fields": [
+        {"id": "name", "type": "text", "label": "Name", "required": true},
+        {"id": "contact_number", "type": "text", "label": "Contact Number", "required": true},
+        {
+          "id": "lab_type",
+          "type": "dropdown",
+          "label": "Laboratory Type",
+          "options": ["Hospital", "Private Lab", "Research Lab", "Blood Bank", "Other"],
+          "required": true
+        },
+        {"id": "lab_type_other", "type": "text", "label": "If Other, specify", "required": false, "condition": {"field": "lab_type", "value": "Other"}}
+      ]
+    },
+    {
+      "name": "Sample & Extraction",
+      "fields": [
+        {"id": "extraction_type", "type": "radio", "label": "Extraction Type", "options": ["Manual", "Automatic"], "required": true},
+        {
+          "id": "sample_type",
+          "type": "radio",
+          "label": "Sample Type",
+          "options": ["Nasopharyngeal Swab", "Blood", "Urine", "Tissue", "Other"],
+          "required": true
+        },
+        {"id": "blood_type", "type": "text", "label": "Blood Type", "required": false, "condition": {"field": "sample_type", "value": "Blood"}},
+        {"id": "protocol_followed", "type": "radio", "label": "Protocol Followed?", "options": ["Yes", "No"]},
+        {
+          "id": "processing_time",
+          "type": "radio",
+          "label": "Processing Time",
+          "options": ["<1h", "2-6h", "6-24h", "24-72h", ">72h"]
+        }
+      ]
+    },
+    {
+      "name": "Issue Description",
+      "fields": [
+        {
+          "id": "issue_type",
+          "type": "checkbox",
+          "label": "Issue Type (select all that apply)",
+          "options": [
+            "No amplification",
+            "Late CT",
+            "Abnormal curve",
+            "IC failure",
+            "NC amplification",
+            "Low RFU",
+            "Error message",
+            "Other"
+          ]
+        },
+        {
+          "id": "issue_consistency",
+          "type": "radio",
+          "label": "Issue Consistency",
+          "options": ["All samples", "Multiple samples", "Single sample"]
+        },
+        {"id": "run_datetime", "type": "datetime", "label": "Run Date & Time"},
+        {"id": "fam_curve_visible", "type": "radio", "label": "FAM Curve Visible?", "options": ["Yes", "No"]},
+        {"id": "low_rfu", "type": "radio", "label": "Low RFU?", "options": ["Yes", "No"]}
+      ]
+    },
+    {
+      "name": "Issue Categorization & Severity",
+      "fields": [
+        {
+          "id": "category",
+          "type": "radio",
+          "label": "Issue Category",
+          "options": ["Device Failure", "Reagent Issue", "Protocol Issue", "Environmental"]
+        },
+        {
+          "id": "user_priority",
+          "type": "radio",
+          "label": "Your Perceived Priority",
+          "options": ["P1 Critical", "P2 High", "P3 Medium"]
+        },
+        {
+          "id": "device_status",
+          "type": "radio",
+          "label": "Device Status",
+          "options": ["Fully functional", "Minor issues", "Partially functional", "Not working"]
+        },
+        {"id": "power_issue", "type": "radio", "label": "Power Issue Detected?", "options": ["Yes", "No"]}
+      ]
+    },
+    {
+      "name": "Controls & Standards",
+      "fields": [
+        {"id": "efficiency", "type": "text", "label": "Efficiency (%)"},
+        {"id": "r_squared", "type": "text", "label": "R² Value"},
+        {"id": "slope", "type": "text", "label": "Slope"},
+        {"id": "ic_valid", "type": "radio", "label": "Internal Control Valid?", "options": ["Yes", "No"]},
+        {"id": "ct_value", "type": "radio", "label": "CT Value Range", "options": ["<26", ">26"]}
+      ]
+    },
+    {
+      "name": "Device Details",
+      "fields": [
+        {
+          "id": "device",
+          "type": "dropdown",
+          "label": "Device",
+          "options": ["PseeR 16", "PseeR 32", "Portable PCR", "Extractor", "Other"]
+        },
+        {"id": "model_number", "type": "text", "label": "Model Number"},
+        {"id": "serial_number", "type": "text", "label": "Serial Number"}
+      ]
+    },
+    {
+      "name": "Reagent Check",
+      "fields": [
+        {"id": "reagent_storage", "type": "radio", "label": "Reagents Stored Correctly?", "options": ["Yes", "No", "Unsure"]},
+        {"id": "reagent_expiry", "type": "radio", "label": "Reagents Within Expiry?", "options": ["Yes", "No"]},
+        {"id": "protocol_changes", "type": "radio", "label": "Protocol Changes Recently?", "options": ["Yes", "No"]}
+      ]
+    },
+    {
+      "name": "Additional Info",
+      "fields": [
+        {"id": "description", "type": "textarea", "label": "Detailed Description of the Issue"},
+        {"id": "file_upload", "type": "file", "label": "Attach Supporting Files (images, run data, error logs)"}
+      ]
+    }
+  ]
+}
