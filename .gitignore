@@ -1,0 +1,12 @@
+node_modules/
+dist/
+server/data/
+server/uploads/
+*.db
+*.db-shm
+*.db-wal
+package-lock.json
+client/package-lock.json
+server/package-lock.json
+.env
+.env.local
