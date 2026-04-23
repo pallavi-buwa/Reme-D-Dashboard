@@ -123,10 +123,7 @@ export default function SubmitComplaint() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {/* Intro */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Submit a Technical Issue</h1>
-          <p className="text-gray-500 text-sm mt-2">
-            Complete this diagnostic form in full. Your responses are used to automatically prioritize and route the complaint to the correct team.
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Submit an Issue</h1>
         </div>
 
         {error && (

@@ -39,6 +39,49 @@ function daysAgo(n) {
   return d.toISOString().replace('T', ' ').slice(0, 19);
 }
 
+function toSqliteDate(d) {
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function rng() {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randInt(rng, minInclusive, maxInclusive) {
+  return Math.floor(rng() * (maxInclusive - minInclusive + 1)) + minInclusive;
+}
+
+function pick(rng, arr) {
+  return arr[randInt(rng, 0, arr.length - 1)];
+}
+
+function pickMany(rng, arr, count) {
+  const copy = [...arr];
+  const out = [];
+  for (let i = 0; i < Math.min(count, copy.length); i++) {
+    const idx = randInt(rng, 0, copy.length - 1);
+    out.push(copy.splice(idx, 1)[0]);
+  }
+  return out;
+}
+
+function weightedPick(rng, items) {
+  const total = items.reduce((acc, [, w]) => acc + w, 0);
+  let r = rng() * total;
+  for (const [value, weight] of items) {
+    r -= weight;
+    if (r <= 0) return value;
+  }
+  return items[items.length - 1][0];
+}
+
 function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -301,4 +344,259 @@ function seedSampleComplaints(users) {
   run('INSERT OR IGNORE INTO ticket_sequence (year, counter) VALUES (2024, 3)');
 }
 
-module.exports = { db, initDatabase, getNextTicketId, run, get, all, exec };
+function getNextTicketIdForYear(year) {
+  run('INSERT OR IGNORE INTO ticket_sequence (year, counter) VALUES (?, 0)', year);
+  run('UPDATE ticket_sequence SET counter = counter + 1 WHERE year = ?', year);
+  const { counter } = get('SELECT counter FROM ticket_sequence WHERE year = ?', year);
+  return `RMD-${year}-${String(counter).padStart(4, '0')}`;
+}
+
+function seedProductionData(options = {}) {
+  const multiplier = Number.isFinite(options.multiplier) ? options.multiplier : 10;
+  const minTargetComplaints = Number.isFinite(options.minTargetComplaints) ? options.minTargetComplaints : 100;
+  const seed = Number.isFinite(options.seed) ? options.seed : Date.now();
+
+  const current = get('SELECT COUNT(*) as c FROM complaints').c || 0;
+  const target = Math.max(current * multiplier, minTargetComplaints);
+  const toAdd = target - current;
+  if (toAdd <= 0) return { current, target, added: 0 };
+
+  const rng = mulberry32((seed ^ (current + 1)) >>> 0);
+
+  const users = all('SELECT id, name, role, region, active FROM users WHERE active = 1');
+  const techUsers = users.filter(u => u.role === 'technical_specialist');
+  const managerUsers = users.filter(u => u.role === 'account_manager');
+  const adminUsers = users.filter(u => u.role === 'admin');
+
+  const priorityRules = all('SELECT * FROM priority_rules');
+  const routingRules = all('SELECT * FROM routing_rules');
+  const { evaluatePriority } = require('./engines/priority');
+  const { evaluateRouting } = require('./engines/routing');
+  const { extractSignals } = require('./engines/signals');
+
+  const regions = ['Cairo', 'Giza', 'Alexandria', 'Tanta', 'Mansoura', 'Aswan', 'Luxor', 'Suez', 'Ismailia', 'Port Said', 'Riyadh', 'Dubai', 'Nairobi', 'Lagos'];
+  const labTypes = ['Hospital', 'Private Lab', 'Blood Bank', 'Clinic', 'Research Institute'];
+  const devices = ['PseeR 16', 'PseeR 32', 'Portable PCR', 'Extractor'];
+  const sampleTypes = ['Nasopharyngeal Swab', 'Blood', 'Saliva', 'Urine', 'Serum', 'Plasma'];
+  const categories = ['Device Failure', 'Reagent Issue', 'Protocol Issue', 'Environmental'];
+  const issueTypes = ['No amplification', 'IC failure', 'Low RFU', 'Abnormal curve', 'High background', 'Late Ct', 'Contamination suspected', 'Extraction failure'];
+  const issueConsistency = ['Single sample', 'Multiple samples', 'All samples'];
+  const deviceStatuses = ['Not working', 'Partially functional', 'Fully functional'];
+  const processingTimes = ['<1h', '2-6h', '6-24h', '>24h'];
+
+  function randomCreatedAt() {
+    const daysBack = randInt(rng, 0, 365);
+    const hoursBack = randInt(rng, 0, 23);
+    const minutes = randInt(rng, 0, 59);
+    return new Date(Date.now() - (daysBack * 24 + hoursBack) * 60 * 60 * 1000 - minutes * 60 * 1000);
+  }
+
+  function statusForAgeDays(ageDays) {
+    if (ageDays <= 2) {
+      return weightedPick(rng, [['New', 40], ['Triaged', 30], ['In Progress', 20], ['Waiting on Customer', 10]]);
+    }
+    if (ageDays <= 14) {
+      return weightedPick(rng, [['Triaged', 20], ['In Progress', 45], ['Waiting on Customer', 20], ['Resolved', 15]]);
+    }
+    if (ageDays <= 60) {
+      return weightedPick(rng, [['In Progress', 25], ['Waiting on Customer', 25], ['Resolved', 35], ['Closed', 15]]);
+    }
+    return weightedPick(rng, [['Resolved', 35], ['Closed', 55], ['Waiting on Customer', 10]]);
+  }
+
+  function contactForName(name) {
+    const base = randInt(rng, 1000000, 9999999);
+    return `+20-10${String(base).padStart(7, '0')}`;
+  }
+
+  function makeReporter() {
+    const first = pick(rng, ['Ahmed', 'Sara', 'Mohammed', 'Mona', 'Youssef', 'Aisha', 'Omar', 'Nour', 'Hassan', 'Laila']);
+    const last = pick(rng, ['Hassan', 'Ali', 'Khalil', 'Mostafa', 'Saeed', 'Ibrahim', 'Farouk', 'Shawky', 'Nassar', 'Abdelrahman']);
+    const title = pick(rng, ['Dr.', 'Mr.', 'Ms.', 'Prof.']);
+    const name = `${title} ${first} ${last}`;
+    return { name, contact_number: contactForName(name) };
+  }
+
+  function chooseAssignedUser(role, region) {
+    if (role === 'technical_specialist' && techUsers.length) return pick(rng, techUsers).id;
+    if (role === 'account_manager' && managerUsers.length) {
+      const regionMatch = managerUsers.find(u => u.region && region && String(region).includes(u.region));
+      return (regionMatch || pick(rng, managerUsers)).id;
+    }
+    if (adminUsers.length) return pick(rng, adminUsers).id;
+    return null;
+  }
+
+  exec('BEGIN');
+  try {
+    for (let i = 0; i < toAdd; i++) {
+      const id = uuidv4();
+      const createdAt = randomCreatedAt();
+      const ageDays = Math.floor((Date.now() - createdAt.getTime()) / (24 * 60 * 60 * 1000));
+      const year = createdAt.getFullYear();
+      const ticketId = getNextTicketIdForYear(year);
+
+      const lab_type = pick(rng, labTypes);
+      const device = pick(rng, devices);
+      const category = pick(rng, categories);
+      const region = rng() < 0.2 ? null : pick(rng, regions);
+
+      const reporter = makeReporter();
+      const sample_type = pick(rng, sampleTypes);
+      const extraction_type = pick(rng, ['Automatic', 'Manual']);
+
+      const selectedIssueTypes = pickMany(rng, issueTypes, randInt(rng, 1, 3));
+      const consistency = weightedPick(rng, [[issueConsistency[0], 30], [issueConsistency[1], 45], [issueConsistency[2], 25]]);
+      const device_status = weightedPick(rng, [[deviceStatuses[0], 20], [deviceStatuses[1], 35], [deviceStatuses[2], 45]]);
+      const power_issue = rng() < 0.15 ? 'Yes' : 'No';
+      const protocol_followed = rng() < 0.85 ? 'Yes' : 'No';
+      const reagent_storage = rng() < 0.9 ? 'Yes' : 'No';
+      const reagent_expiry = rng() < 0.8 ? 'Yes' : 'No';
+
+      const sections = {
+        'Reporter & Laboratory Information': { name: reporter.name, contact_number: reporter.contact_number, lab_type },
+        'Sample & Extraction': {
+          extraction_type,
+          sample_type,
+          blood_type: sample_type === 'Blood' ? pick(rng, ['EDTA', 'Serum', 'Heparin']) : undefined,
+          protocol_followed,
+          processing_time: pick(rng, processingTimes),
+        },
+        'Issue Description': {
+          issue_type: selectedIssueTypes,
+          issue_consistency: consistency,
+          run_datetime: new Date(createdAt.getTime() - randInt(rng, 0, 6) * 60 * 60 * 1000).toISOString().slice(0, 16),
+          fam_curve_visible: rng() < 0.75 ? 'Yes' : 'No',
+          low_rfu: selectedIssueTypes.includes('Low RFU') ? 'Yes' : (rng() < 0.25 ? 'Yes' : 'No'),
+        },
+        'Issue Categorization & Severity': {
+          category,
+          user_priority: weightedPick(rng, [['P1 Critical', 10], ['P2 High', 35], ['P3 Medium', 55]]),
+          device_status,
+          power_issue,
+        },
+        'Controls & Standards': {
+          efficiency: String(randInt(rng, 65, 98)),
+          r_squared: (0.97 + rng() * 0.03).toFixed(3),
+          slope: (-3.9 + rng() * 0.9).toFixed(2),
+          ic_valid: selectedIssueTypes.includes('IC failure') ? 'No' : (rng() < 0.85 ? 'Yes' : 'No'),
+          ct_value: weightedPick(rng, [['<26', 45], ['>26', 55]]),
+        },
+        'Device Details': {
+          device,
+          model_number: `${device.replace(/\s+/g, '-').toUpperCase()}-${randInt(rng, 2020, 2026)}`,
+          serial_number: `SN-${randInt(rng, 100, 999)}-${randInt(rng, 10, 99)}`,
+        },
+        'Reagent Check': {
+          reagent_storage,
+          reagent_expiry,
+          protocol_changes: rng() < 0.2 ? 'Yes' : 'No',
+        },
+        'Additional Info': {
+          description: weightedPick(rng, [
+            ['Issue observed during routine run; operator requests guidance and troubleshooting steps.', 35],
+            ['Intermittent failures observed; requesting remote support and recommended checks.', 30],
+            ['Multiple samples affected; lab operations impacted; needs quick resolution.', 25],
+            ['Customer reports consistent failure after recent maintenance; requesting escalation.', 10],
+          ]),
+        },
+      };
+
+      const flat = Object.values(sections).reduce((acc, s) => ({ ...acc, ...s }), {});
+      const signals = extractSignals(flat);
+
+      const pr = evaluatePriority(flat, priorityRules);
+      const routing = evaluateRouting(flat, pr.priority, routingRules);
+      const primaryAssignment = routing.find(a => a.team) || null;
+
+      const assigned_team = primaryAssignment?.team ?? null;
+      const assigned_role = primaryAssignment?.role ?? null;
+      const escalated = routing.some(a => a.escalate) ? 1 : 0;
+      const assigned_to = (assigned_role && rng() < 0.85) ? chooseAssignedUser(assigned_role, region) : null;
+
+      const status = statusForAgeDays(ageDays);
+
+      const createdSql = toSqliteDate(createdAt);
+      let updatedAt = new Date(createdAt.getTime() + randInt(rng, 1, Math.max(2, ageDays + 1)) * 60 * 60 * 1000);
+      if (updatedAt.getTime() > Date.now()) updatedAt = new Date(Date.now() - randInt(rng, 0, 6) * 60 * 60 * 1000);
+      const updatedSql = toSqliteDate(updatedAt);
+
+      run(
+        'INSERT INTO complaints (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,category,device,lab_type,region,assigned_to,assigned_team,submitted_by_name,submitted_by_contact,escalated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        id, ticketId, status, pr.priority, pr.reasoning, pr.rule_name,
+        category, device, lab_type, region, assigned_to, assigned_team,
+        reporter.name, reporter.contact_number, escalated, createdSql, updatedSql
+      );
+
+      for (const [sectionName, data] of Object.entries(sections)) {
+        const cleaned = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+        run('INSERT INTO section_responses (complaint_id, section_name, data) VALUES (?, ?, ?)', id, sectionName, JSON.stringify(cleaned));
+      }
+
+      run('INSERT INTO derived_signals (complaint_id, signals) VALUES (?, ?)', id, JSON.stringify(signals));
+
+      const statusSteps = ['New', 'Triaged', 'In Progress', 'Waiting on Customer', 'Resolved', 'Closed'];
+      const targetIdx = Math.max(0, statusSteps.indexOf(status));
+      let stepTime = new Date(createdAt.getTime());
+      run(
+        'INSERT INTO status_history (complaint_id, from_status, to_status, changed_by, notes, changed_at) VALUES (?, ?, ?, ?, ?, ?)',
+        id, null, 'New', 'system', 'Complaint submitted via form', toSqliteDate(stepTime)
+      );
+
+      if (assigned_to) {
+        const assignedAt = new Date(stepTime.getTime() + randInt(rng, 15, 240) * 60 * 1000);
+        run(
+          'INSERT INTO assignment_history (complaint_id, assigned_from, assigned_to, team, assigned_by, assigned_at) VALUES (?, ?, ?, ?, ?, ?)',
+          id, null, assigned_to, assigned_team, 'system', toSqliteDate(assignedAt)
+        );
+      }
+
+      let prev = 'New';
+      for (let s = 1; s <= targetIdx; s++) {
+        const next = statusSteps[s];
+        stepTime = new Date(stepTime.getTime() + randInt(rng, 2, 72) * 60 * 60 * 1000);
+        const note = next === 'Triaged'
+          ? 'Auto-triaged by rules engine'
+          : next === 'In Progress'
+            ? 'Assigned engineer started investigation'
+            : next === 'Waiting on Customer'
+              ? 'Requested additional logs / run details from customer'
+              : next === 'Resolved'
+                ? 'Resolution provided; monitoring for recurrence'
+                : 'Closed after customer confirmation';
+        run(
+          'INSERT INTO status_history (complaint_id, from_status, to_status, changed_by, notes, changed_at) VALUES (?, ?, ?, ?, ?, ?)',
+          id, prev, next, 'system', note, toSqliteDate(stepTime)
+        );
+        prev = next;
+      }
+
+      const noteCount = weightedPick(rng, [[0, 55], [1, 30], [2, 12], [3, 3]]);
+      for (let n = 0; n < noteCount; n++) {
+        const author = pick(rng, users);
+        const noteTime = new Date(createdAt.getTime() + randInt(rng, 1, Math.max(2, ageDays + 1)) * 24 * 60 * 60 * 1000);
+        const noteText = weightedPick(rng, [
+          ['Reviewed run metadata; requesting instrument logs for the affected run.', 30],
+          ['Suggested reagent lot verification and repeat run with fresh controls.', 25],
+          ['Advised power-cycle and optics calibration check; awaiting results.', 20],
+          ['Customer confirmed issue persists; preparing escalation path.', 15],
+          ['Follow-up: issue appears intermittent; monitoring next 3 runs.', 10],
+        ]);
+        run(
+          'INSERT INTO internal_notes (complaint_id, user_id, user_name, note, created_at) VALUES (?, ?, ?, ?, ?)',
+          id, author.id, author.name, noteText, toSqliteDate(noteTime)
+        );
+      }
+    }
+
+    exec('COMMIT');
+  } catch (e) {
+    exec('ROLLBACK');
+    throw e;
+  }
+
+  const after = get('SELECT COUNT(*) as c FROM complaints').c || 0;
+  return { current, target, added: toAdd, after, seed };
+}
+
+module.exports = { db, initDatabase, getNextTicketId, seedProductionData, run, get, all, exec };
