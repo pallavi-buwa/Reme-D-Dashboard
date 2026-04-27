@@ -208,6 +208,20 @@ function initDatabase() {
   // Migration: add submitted_by_email column if it doesn't exist yet
   try { db.exec('ALTER TABLE complaints ADD COLUMN submitted_by_email TEXT'); } catch { /* already exists */ }
 
+  // Migration: purge all "Waiting on Customer" complaints (status removed from workflow)
+  const wocIds = all("SELECT id FROM complaints WHERE status = 'Waiting on Customer'").map(r => r.id);
+  if (wocIds.length) {
+    const placeholders = wocIds.map(() => '?').join(',');
+    run(`DELETE FROM status_history    WHERE complaint_id IN (${placeholders})`, ...wocIds);
+    run(`DELETE FROM section_responses WHERE complaint_id IN (${placeholders})`, ...wocIds);
+    run(`DELETE FROM derived_signals   WHERE complaint_id IN (${placeholders})`, ...wocIds);
+    run(`DELETE FROM assignment_history WHERE complaint_id IN (${placeholders})`, ...wocIds);
+    run(`DELETE FROM internal_notes    WHERE complaint_id IN (${placeholders})`, ...wocIds);
+    run(`DELETE FROM attachments       WHERE complaint_id IN (${placeholders})`, ...wocIds);
+    run(`DELETE FROM complaints        WHERE id           IN (${placeholders})`, ...wocIds);
+    console.log(`  Purged ${wocIds.length} "Waiting on Customer" complaint(s).`);
+  }
+
   const userCount = get('SELECT COUNT(*) as c FROM users');
   if (userCount.c === 0) seedData();
 
@@ -408,15 +422,15 @@ function seedProductionData(options = {}) {
 
   function statusForAgeDays(ageDays) {
     if (ageDays <= 2) {
-      return weightedPick(rng, [['New', 40], ['Triaged', 30], ['In Progress', 20], ['Waiting on Customer', 10]]);
+      return weightedPick(rng, [['New', 45], ['Triaged', 35], ['In Progress', 20]]);
     }
     if (ageDays <= 14) {
-      return weightedPick(rng, [['Triaged', 20], ['In Progress', 45], ['Waiting on Customer', 20], ['Resolved', 15]]);
+      return weightedPick(rng, [['Triaged', 20], ['In Progress', 50], ['Resolved', 30]]);
     }
     if (ageDays <= 60) {
-      return weightedPick(rng, [['In Progress', 25], ['Waiting on Customer', 25], ['Resolved', 35], ['Closed', 15]]);
+      return weightedPick(rng, [['In Progress', 30], ['Resolved', 45], ['Closed', 25]]);
     }
-    return weightedPick(rng, [['Resolved', 35], ['Closed', 55], ['Waiting on Customer', 10]]);
+    return weightedPick(rng, [['Resolved', 40], ['Closed', 60]]);
   }
 
   function contactForName(name) {
@@ -550,7 +564,7 @@ function seedProductionData(options = {}) {
 
       run('INSERT INTO derived_signals (complaint_id, signals) VALUES (?, ?)', id, JSON.stringify(signals));
 
-      const statusSteps = ['New', 'Triaged', 'In Progress', 'Waiting on Customer', 'Resolved', 'Closed'];
+      const statusSteps = ['New', 'Triaged', 'In Progress', 'Resolved', 'Closed'];
       const targetIdx = Math.max(0, statusSteps.indexOf(status));
       let stepTime = new Date(createdAt.getTime());
       run(
@@ -574,11 +588,9 @@ function seedProductionData(options = {}) {
           ? 'Auto-triaged by rules engine'
           : next === 'In Progress'
             ? 'Assigned engineer started investigation'
-            : next === 'Waiting on Customer'
-              ? 'Requested additional logs / run details from customer'
-              : next === 'Resolved'
-                ? 'Resolution provided; monitoring for recurrence'
-                : 'Closed after customer confirmation';
+            : next === 'Resolved'
+              ? 'Resolution provided; monitoring for recurrence'
+              : 'Closed after customer confirmation';
         run(
           'INSERT INTO status_history (complaint_id, from_status, to_status, changed_by, notes, changed_at) VALUES (?, ?, ?, ?, ?, ?)',
           id, prev, next, 'system', note, toSqliteDate(stepTime)
