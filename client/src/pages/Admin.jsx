@@ -350,6 +350,124 @@ function RoutingRulesTab() {
   )
 }
 
+// ─── SLA Configs ──────────────────────────────────────────────────────────────
+const PRIORITY_LABELS = { P0: 'P0 · Critical', P1: 'P1 · High', P2: 'P2 · Medium', P3: 'P3 · Low' }
+
+function SlaTab() {
+  const { t } = useLanguage()
+  const [configs, setConfigs] = useState([])
+  const [modal, setModal] = useState(null) // sla_config row or null
+  const [form, setForm] = useState({ response_hours: '', resolution_hours: '', active: true })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => { adminApi.getSlaConfigs().then(r => setConfigs(r.data)) }, [])
+
+  function openEdit(cfg) {
+    setForm({ response_hours: cfg.response_hours, resolution_hours: cfg.resolution_hours, active: !!cfg.active })
+    setModal(cfg)
+    setError('')
+    setSaved(false)
+  }
+
+  async function handleSave() {
+    setSaving(true); setError('')
+    try {
+      const rh = parseFloat(form.response_hours)
+      const resh = parseFloat(form.resolution_hours)
+      if (!isFinite(rh) || rh <= 0 || !isFinite(resh) || resh <= 0) {
+        setError('Hours must be positive numbers'); setSaving(false); return
+      }
+      await adminApi.updateSlaConfig(modal.priority, { response_hours: rh, resolution_hours: resh, active: form.active ? 1 : 0 })
+      const { data } = await adminApi.getSlaConfigs(); setConfigs(data)
+      setSaved(true)
+      setTimeout(() => setModal(null), 800)
+    } catch (e) { setError(e.response?.data?.error || t('errorGeneric')) } finally { setSaving(false) }
+  }
+
+  const slaStatusColor = (cfg) => cfg.active ? 'text-green-600' : 'text-gray-400'
+
+  return (
+    <div>
+      <p className="text-sm text-gray-500 mb-4">{t('slaSubtitle')}</p>
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              {['Priority', t('slaResponse'), t('slaResolution'), t('slaActive'), ''].map(h => (
+                <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {configs.map(cfg => (
+              <tr key={cfg.priority} className="hover:bg-gray-50">
+                <td className="px-5 py-4">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${PRIORITY_COLORS[cfg.priority] || ''}`}>
+                    {PRIORITY_LABELS[cfg.priority] || cfg.priority}
+                  </span>
+                </td>
+                <td className="px-5 py-4">
+                  <span className="text-base font-semibold text-gray-900">{cfg.response_hours}</span>
+                  <span className="text-xs text-gray-400 ml-1">{t('slaHours')}</span>
+                </td>
+                <td className="px-5 py-4">
+                  <span className="text-base font-semibold text-gray-900">{cfg.resolution_hours}</span>
+                  <span className="text-xs text-gray-400 ml-1">{t('slaHours')}</span>
+                </td>
+                <td className="px-5 py-4">
+                  <span className={`text-xs font-medium ${slaStatusColor(cfg)}`}>
+                    {cfg.active ? t('statusActive') : t('statusInactive')}
+                  </span>
+                </td>
+                <td className="px-5 py-4 text-right">
+                  <button onClick={() => openEdit(cfg)} className="btn-ghost text-xs">{t('slaEdit')}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal && (
+        <Modal title={t('slaEditTitle', modal.priority)} onClose={() => setModal(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="label">{t('slaResponseHours')}</label>
+              <input
+                type="number" min="0.5" step="0.5" className="input"
+                value={form.response_hours}
+                onChange={e => setForm(p => ({ ...p, response_hours: e.target.value }))}
+              />
+              <p className="text-xs text-gray-400 mt-1">{t('slaResponseHint')}</p>
+            </div>
+            <div>
+              <label className="label">{t('slaResolutionHours')}</label>
+              <input
+                type="number" min="1" step="1" className="input"
+                value={form.resolution_hours}
+                onChange={e => setForm(p => ({ ...p, resolution_hours: e.target.value }))}
+              />
+              <p className="text-xs text-gray-400 mt-1">{t('slaResolutionHint')}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="sla_active" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} />
+              <label htmlFor="sla_active" className="text-sm text-gray-700">{t('slaActive')}</label>
+            </div>
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {saved && <p className="text-green-600 text-sm">{t('slaSaveOk')}</p>}
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? t('saving') : t('btnSave')}</button>
+              <button onClick={() => setModal(null)} className="btn-secondary flex-1">{t('btnCancel')}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Admin Page ──────────────────────────────────────────────────────────
 export default function Admin() {
   const { user } = useAuth()
@@ -373,11 +491,13 @@ export default function Admin() {
         <Tab active={tab === 'users'} onClick={() => setTab('users')}>{t('tabUsers')}</Tab>
         <Tab active={tab === 'priority'} onClick={() => setTab('priority')}>{t('tabPriority')}</Tab>
         <Tab active={tab === 'routing'} onClick={() => setTab('routing')}>{t('tabRouting')}</Tab>
+        <Tab active={tab === 'sla'} onClick={() => setTab('sla')}>{t('tabSla')}</Tab>
       </div>
 
       {tab === 'users' && <UsersTab />}
       {tab === 'priority' && <PriorityRulesTab />}
       {tab === 'routing' && <RoutingRulesTab />}
+      {tab === 'sla' && <SlaTab />}
     </Layout>
   )
 }

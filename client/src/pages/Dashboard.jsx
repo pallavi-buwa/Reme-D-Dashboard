@@ -146,6 +146,11 @@ export default function Dashboard() {
                       {c.ticket_id}
                     </Link>
                     {c.escalated ? <span className="ml-1 text-xs text-red-500">🔺</span> : null}
+                    {c.sla_breached ? (
+                      <span title={t('slaBreached')} className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200">
+                        ⏱ {t('slaBreach')}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3"><PriorityBadge priority={c.priority} /></td>
                   <td className="px-4 py-3"><StatusBadge status={c.status} /></td>

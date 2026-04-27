@@ -7,6 +7,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { extractSignals } = require('../engines/signals');
 const { evaluatePriority } = require('../engines/priority');
 const { evaluateRouting } = require('../engines/routing');
+const { computeSla, buildSlaMap } = require('../engines/sla');
 
 const router = express.Router();
 
@@ -109,7 +110,14 @@ router.get('/', authMiddleware, (req, res) => {
   q += ' ORDER BY c.created_at DESC LIMIT 500';
 
   const complaints = db.prepare(q).all(...params);
-  res.json(complaints);
+
+  const slaMap = buildSlaMap(db.prepare('SELECT * FROM sla_configs').all());
+  const withSla = complaints.map(c => {
+    const sla = computeSla(c, slaMap[c.priority]);
+    return { ...c, sla_breached: sla ? sla.breached : false, sla_response_deadline: sla?.response.deadline ?? null, sla_resolution_deadline: sla?.resolution.deadline ?? null };
+  });
+
+  res.json(withSla);
 });
 
 // GET /api/complaints/export — CSV export
@@ -146,6 +154,9 @@ router.get('/:id', authMiddleware, (req, res) => {
   const notes = db.prepare('SELECT * FROM internal_notes WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
   const attachments = db.prepare('SELECT * FROM attachments WHERE complaint_id = ?').all(complaint.id);
 
+  const slaMap = buildSlaMap(db.prepare('SELECT * FROM sla_configs').all());
+  const sla = computeSla(complaint, slaMap[complaint.priority]);
+
   res.json({
     ...complaint,
     sections: sections.map(s => ({ name: s.section_name, data: JSON.parse(s.data) })),
@@ -154,6 +165,7 @@ router.get('/:id', authMiddleware, (req, res) => {
     assignment_history: assignHistory,
     notes,
     attachments,
+    sla,
   });
 });
 

@@ -39,6 +39,47 @@ function SignalPill({ label, active }) {
   )
 }
 
+function SlaRow({ label, data, t }) {
+  const statusConfig = {
+    met:      { cls: 'bg-green-100 text-green-700',  text: t('slaMet') },
+    ok:       { cls: 'bg-blue-50 text-blue-600',     text: t('slaOk') },
+    breached: { cls: 'bg-orange-100 text-orange-700', text: t('slaBreached') },
+  }
+  const sc = statusConfig[data.status] || statusConfig.ok
+  const remainingText = data.status === 'met' ? null
+    : data.remaining_mins < 0 ? t('slaOverdue', data.remaining_mins)
+    : t('slaRemaining', data.remaining_mins)
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <div className="flex-1 min-w-0">
+        <span className="text-gray-500 font-medium">{label}</span>
+        <span className="text-gray-300 mx-1">·</span>
+        <span className="text-gray-400">{data.target_hours}{t('slaHours')} {t('slaTarget')}</span>
+        {remainingText && <div className="text-gray-400 mt-0.5 truncate">{remainingText}</div>}
+      </div>
+      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 ${sc.cls}`}>{sc.text}</span>
+    </div>
+  )
+}
+
+function SlaCard({ sla, t }) {
+  const breached = sla.breached
+  return (
+    <div className={`card p-4 ${breached ? 'border-l-4 border-orange-400' : ''}`}>
+      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+        {t('slaStatus')}
+        {breached && <span className="text-xs font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded">⏱ {t('slaBreached')}</span>}
+      </h4>
+      <div className="space-y-3">
+        <SlaRow label={t('slaResponseLabel')} data={sla.response} t={t} />
+        <div className="border-t border-gray-100" />
+        <SlaRow label={t('slaResolutionLabel')} data={sla.resolution} t={t} />
+      </div>
+    </div>
+  )
+}
+
 export default function ComplaintDetail() {
   const { id } = useParams()
   const { user } = useAuth()
@@ -210,6 +251,11 @@ export default function ComplaintDetail() {
                 </button>
               </div>
             </div>
+          )}
+
+          {/* SLA Status */}
+          {complaint.sla && (
+            <SlaCard sla={complaint.sla} t={t} />
           )}
 
           {/* Notes */}

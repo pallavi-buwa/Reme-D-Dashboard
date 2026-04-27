@@ -200,6 +200,35 @@ const translations = {
     uploadClick: 'Click to upload or drag and drop',
     uploadTypes: 'Images, PDF, CSV, Excel, Log files (max 20MB)',
 
+    // SLA
+    tabSla: 'SLA Targets',
+    slaTitle: 'SLA Targets',
+    slaSubtitle: 'Response and resolution time targets per priority level',
+    slaResponse: 'Response Target',
+    slaResolution: 'Resolution Target',
+    slaHours: 'hrs',
+    slaActive: 'Active',
+    slaEdit: 'Edit',
+    slaEditTitle: (p) => `Edit SLA — ${p}`,
+    slaResponseHours: 'Response target (hours)',
+    slaResolutionHours: 'Resolution target (hours)',
+    slaResponseHint: 'Time from submission to first assignment',
+    slaResolutionHint: 'Time from submission to Resolved / Closed',
+    slaSaveOk: 'SLA targets saved',
+    slaStatus: 'SLA Status',
+    slaMet: 'Met',
+    slaOk: 'Within target',
+    slaBreached: 'Breached',
+    slaResponseLabel: 'Response',
+    slaResolutionLabel: 'Resolution',
+    slaTarget: 'target',
+    slaRemaining: (m) => m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m remaining` : `${m}m remaining`,
+    slaOverdue: (m) => {
+      const abs = Math.abs(m)
+      return abs >= 60 ? `${Math.floor(abs / 60)}h ${abs % 60}m overdue` : `${abs}m overdue`
+    },
+    slaBreach: 'SLA',
+
     // Status display names
     statusNew: 'New',
     statusTriaged: 'Triaged',
@@ -410,6 +439,35 @@ const translations = {
     selectPlaceholder: '— اختر —',
     uploadClick: 'انقر للرفع أو اسحب وأفلت',
     uploadTypes: 'صور، PDF، CSV، Excel، ملفات سجل (الحد الأقصى 20MB)',
+
+    // SLA
+    tabSla: 'أهداف SLA',
+    slaTitle: 'أهداف SLA',
+    slaSubtitle: 'أهداف وقت الاستجابة والحل لكل مستوى أولوية',
+    slaResponse: 'هدف الاستجابة',
+    slaResolution: 'هدف الحل',
+    slaHours: 'ساعة',
+    slaActive: 'نشط',
+    slaEdit: 'تعديل',
+    slaEditTitle: (p) => `تعديل SLA — ${p}`,
+    slaResponseHours: 'هدف الاستجابة (بالساعات)',
+    slaResolutionHours: 'هدف الحل (بالساعات)',
+    slaResponseHint: 'الوقت من التقديم إلى أول إسناد',
+    slaResolutionHint: 'الوقت من التقديم إلى الحل / الإغلاق',
+    slaSaveOk: 'تم حفظ أهداف SLA',
+    slaStatus: 'حالة SLA',
+    slaMet: 'محقق',
+    slaOk: 'ضمن الهدف',
+    slaBreached: 'منتهك',
+    slaResponseLabel: 'الاستجابة',
+    slaResolutionLabel: 'الحل',
+    slaTarget: 'هدف',
+    slaRemaining: (m) => m >= 60 ? `متبقي ${Math.floor(m / 60)}س ${m % 60}د` : `متبقي ${m}د`,
+    slaOverdue: (m) => {
+      const abs = Math.abs(m)
+      return abs >= 60 ? `متأخر ${Math.floor(abs / 60)}س ${abs % 60}د` : `متأخر ${abs}د`
+    },
+    slaBreach: 'SLA',
 
     // Status display names
     statusNew: 'جديد',

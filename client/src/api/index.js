@@ -51,6 +51,8 @@ export const adminApi = {
   createRoutingRule: (data) => api.post('/admin/routing-rules', data),
   updateRoutingRule: (id, data) => api.patch(`/admin/routing-rules/${id}`, data),
   deleteRoutingRule: (id) => api.delete(`/admin/routing-rules/${id}`),
+  getSlaConfigs: () => api.get('/admin/sla-configs'),
+  updateSlaConfig: (priority, data) => api.patch(`/admin/sla-configs/${priority}`, data),
 }
 
 export const analyticsApi = {

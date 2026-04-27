@@ -194,10 +194,21 @@ function initDatabase() {
       year INTEGER PRIMARY KEY,
       counter INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS sla_configs (
+      priority TEXT PRIMARY KEY,
+      response_hours REAL NOT NULL DEFAULT 24,
+      resolution_hours REAL NOT NULL DEFAULT 72,
+      active INTEGER DEFAULT 1,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   const userCount = get('SELECT COUNT(*) as c FROM users');
   if (userCount.c === 0) seedData();
+
+  const slaCount = get('SELECT COUNT(*) as c FROM sla_configs');
+  if (slaCount.c === 0) seedSlaDefaults();
 }
 
 function getNextTicketId() {
@@ -597,6 +608,19 @@ function seedProductionData(options = {}) {
 
   const after = get('SELECT COUNT(*) as c FROM complaints').c || 0;
   return { current, target, added: toAdd, after, seed };
+}
+
+function seedSlaDefaults() {
+  const defaults = [
+    { priority: 'P0', response_hours: 2,  resolution_hours: 8   },
+    { priority: 'P1', response_hours: 4,  resolution_hours: 24  },
+    { priority: 'P2', response_hours: 24, resolution_hours: 72  },
+    { priority: 'P3', response_hours: 72, resolution_hours: 168 },
+  ];
+  for (const d of defaults) {
+    run('INSERT OR IGNORE INTO sla_configs (priority, response_hours, resolution_hours) VALUES (?, ?, ?)',
+      d.priority, d.response_hours, d.resolution_hours);
+  }
 }
 
 module.exports = { db, initDatabase, getNextTicketId, seedProductionData, run, get, all, exec };

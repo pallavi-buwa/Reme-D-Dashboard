@@ -118,4 +118,32 @@ router.delete('/routing-rules/:id', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// ── SLA Configs ───────────────────────────────────────────────────────────────
+
+router.get('/sla-configs', (req, res) => {
+  res.json(db.prepare('SELECT * FROM sla_configs ORDER BY priority ASC').all());
+});
+
+router.patch('/sla-configs/:priority', requireRole('admin'), (req, res) => {
+  const { priority } = req.params;
+  if (!['P0', 'P1', 'P2', 'P3'].includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
+  const { response_hours, resolution_hours, active } = req.body;
+  const updates = ['updated_at = CURRENT_TIMESTAMP'];
+  const params = [];
+  if (response_hours !== undefined) {
+    const v = parseFloat(response_hours);
+    if (!isFinite(v) || v <= 0) return res.status(400).json({ error: 'response_hours must be a positive number' });
+    updates.push('response_hours = ?'); params.push(v);
+  }
+  if (resolution_hours !== undefined) {
+    const v = parseFloat(resolution_hours);
+    if (!isFinite(v) || v <= 0) return res.status(400).json({ error: 'resolution_hours must be a positive number' });
+    updates.push('resolution_hours = ?'); params.push(v);
+  }
+  if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
+  params.push(priority);
+  db.prepare(`UPDATE sla_configs SET ${updates.join(', ')} WHERE priority = ?`).run(...params);
+  res.json({ ok: true });
+});
+
 module.exports = router;
