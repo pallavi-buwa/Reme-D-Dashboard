@@ -107,7 +107,12 @@ export default function Dashboard() {
         </select>
         <select className="input w-44 text-sm py-1.5" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
           <option value="">{t('allCategories')}</option>
-          {['Device Failure', 'Reagent Issue', 'Protocol Issue', 'Environmental'].map(c => <option key={c}>{c}</option>)}
+          {[
+            ['A: Machine', 'A: Machine/Device Failure'],
+            ['B: Kit/Reagent', 'B: Kit/Reagent Issue'],
+            ['C: Assay/Protocol', 'C: Assay/Protocol Issue'],
+            ['D: Environmental', 'D: Environmental'],
+          ].map(([val, label]) => <option key={val} value={val}>{label}</option>)}
         </select>
         <button onClick={fetchComplaints} className="btn-secondary text-sm py-1.5">{t('btnRefresh')}</button>
         {user?.role === 'admin' && (

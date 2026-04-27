@@ -110,6 +110,7 @@ function initDatabase() {
       assigned_team TEXT,
       submitted_by_name TEXT,
       submitted_by_contact TEXT,
+      submitted_by_email TEXT,
       escalated INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -204,6 +205,9 @@ function initDatabase() {
     );
   `);
 
+  // Migration: add submitted_by_email column if it doesn't exist yet
+  try { db.exec('ALTER TABLE complaints ADD COLUMN submitted_by_email TEXT'); } catch { /* already exists */ }
+
   const userCount = get('SELECT COUNT(*) as c FROM users');
   if (userCount.c === 0) seedData();
 
@@ -234,14 +238,14 @@ function seedData() {
   }
 
   const priorityRules = [
-    { name: 'Hospital Device Not Working → P0', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'device_status', op: 'eq', value: 'Not working' }, { field: 'lab_type', op: 'eq', value: 'Hospital' }] }), result_priority: 'P0', reasoning: 'Non-functional device in a hospital — direct patient care risk.', order_index: 1 },
+    { name: 'Hospital Device Not Working → P0', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'device_status', op: 'eq', value: 'Not working/Completely non-functional' }, { field: 'lab_type', op: 'eq', value: 'Hospital' }] }), result_priority: 'P0', reasoning: 'Non-functional device in a hospital — direct patient care risk.', order_index: 1 },
     { name: 'Power Issue → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'power_issue', op: 'eq', value: 'Yes' }] }), result_priority: 'P1', reasoning: 'Power failure detected — hardware intervention required immediately.', order_index: 2 },
-    { name: 'IC Failure All Samples → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'issue_type', op: 'contains', value: 'IC failure' }, { field: 'issue_consistency', op: 'eq', value: 'All samples' }] }), result_priority: 'P1', reasoning: 'Internal control failure across all samples — systemic assay failure.', order_index: 3 },
-    { name: 'No Amplification No FAM → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'issue_type', op: 'contains', value: 'No amplification' }, { field: 'fam_curve_visible', op: 'eq', value: 'No' }] }), result_priority: 'P1', reasoning: 'No amplification with no FAM curve — complete PCR failure.', order_index: 4 },
-    { name: 'Low RFU All Samples → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'issue_type', op: 'contains', value: 'Low RFU' }, { field: 'issue_consistency', op: 'eq', value: 'All samples' }] }), result_priority: 'P1', reasoning: 'Low RFU signal across all samples — likely reagent or optics failure.', order_index: 5 },
-    { name: 'Reagent Issue Improper Storage → P2', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'eq', value: 'Reagent Issue' }, { field: 'reagent_storage', op: 'eq', value: 'No' }] }), result_priority: 'P2', reasoning: 'Reagent stored improperly — likely root cause of assay failure.', order_index: 6 },
+    { name: 'IC Failure All Samples → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'issue_type', op: 'contains', value: 'Internal Control (IC) failure/Not detected' }, { field: 'issue_consistency', op: 'eq', value: 'Consistent across all samples' }] }), result_priority: 'P1', reasoning: 'Internal control failure across all samples — systemic assay failure.', order_index: 3 },
+    { name: 'No Amplification No FAM → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'issue_type', op: 'contains', value: 'No amplification curve or visible (Flat line)' }, { field: 'fam_curve_visible', op: 'eq', value: 'No' }] }), result_priority: 'P1', reasoning: 'No amplification with no FAM curve — complete PCR failure.', order_index: 4 },
+    { name: 'Low RFU All Samples → P1', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'issue_type', op: 'contains', value: 'Low signal intensity/Low RFU values' }, { field: 'issue_consistency', op: 'eq', value: 'Consistent across all samples' }] }), result_priority: 'P1', reasoning: 'Low signal/RFU across all samples — likely reagent or optics failure.', order_index: 5 },
+    { name: 'Kit/Reagent Issue + Improper Storage → P2', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'contains', value: 'B: Kit/Reagent' }, { field: 'reagent_storage', op: 'eq', value: 'No' }] }), result_priority: 'P2', reasoning: 'Reagent stored improperly — likely root cause of assay failure.', order_index: 6 },
     { name: 'Protocol Not Followed → P2', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'protocol_followed', op: 'eq', value: 'No' }] }), result_priority: 'P2', reasoning: 'Standard protocol deviation — user training or protocol review required.', order_index: 7 },
-    { name: 'Device Functional Single Sample → P3', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'device_status', op: 'eq', value: 'Fully functional' }, { field: 'issue_consistency', op: 'eq', value: 'Single sample' }] }), result_priority: 'P3', reasoning: 'Device fully functional; issue limited to single sample — likely sample quality.', order_index: 8 },
+    { name: 'Device Functional Single Sample → P3', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'device_status', op: 'eq', value: 'Fully functional' }, { field: 'issue_consistency', op: 'eq', value: 'Only 1 sample' }] }), result_priority: 'P3', reasoning: 'Device fully functional; issue limited to single sample — likely sample quality.', order_index: 8 },
   ];
 
   for (const r of priorityRules) {
@@ -249,11 +253,11 @@ function seedData() {
   }
 
   const routingRules = [
-    { name: 'Device Failure → Technical Engineering', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'eq', value: 'Device Failure' }] }), assign_team: 'Technical Engineering', assign_role: 'technical_specialist', escalate: 0, order_index: 1 },
-    { name: 'Reagent Issue → QC/Manufacturing', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'eq', value: 'Reagent Issue' }] }), assign_team: 'QC / Manufacturing', assign_role: 'technical_specialist', escalate: 0, order_index: 2 },
-    { name: 'Protocol Issue → Application Science', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'eq', value: 'Protocol Issue' }] }), assign_team: 'Application Science', assign_role: 'technical_specialist', escalate: 0, order_index: 3 },
-    { name: 'Environmental → Field Support', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'eq', value: 'Environmental' }] }), assign_team: 'Field Support', assign_role: 'technical_specialist', escalate: 0, order_index: 4 },
-    { name: 'PCR Device → PCR Specialist', conditions: JSON.stringify({ operator: 'OR', conditions: [{ field: 'device', op: 'eq', value: 'PseeR 16' }, { field: 'device', op: 'eq', value: 'PseeR 32' }, { field: 'device', op: 'eq', value: 'Portable PCR' }] }), assign_team: 'PCR Specialist Team', assign_role: 'technical_specialist', escalate: 0, order_index: 5 },
+    { name: 'Machine/Device Failure → Technical Engineering', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'contains', value: 'A: Machine' }] }), assign_team: 'Technical Engineering', assign_role: 'technical_specialist', escalate: 0, order_index: 1 },
+    { name: 'Kit/Reagent Issue → QC/Manufacturing', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'contains', value: 'B: Kit/Reagent' }] }), assign_team: 'QC / Manufacturing', assign_role: 'technical_specialist', escalate: 0, order_index: 2 },
+    { name: 'Assay/Protocol Issue → Application Science', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'contains', value: 'C: Assay/Protocol' }] }), assign_team: 'Application Science', assign_role: 'technical_specialist', escalate: 0, order_index: 3 },
+    { name: 'Environmental → Field Support', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'category', op: 'contains', value: 'D: Environmental' }] }), assign_team: 'Field Support', assign_role: 'technical_specialist', escalate: 0, order_index: 4 },
+    { name: 'PCR Device → PCR Specialist', conditions: JSON.stringify({ operator: 'OR', conditions: [{ field: 'device', op: 'eq', value: 'PseeR 16' }, { field: 'device', op: 'eq', value: 'PseeR 32' }, { field: 'device', op: 'eq', value: 'Portable PCR mini' }] }), assign_team: 'PCR Specialist Team', assign_role: 'technical_specialist', escalate: 0, order_index: 5 },
     { name: 'Extractor Device → Extraction Specialist', conditions: JSON.stringify({ operator: 'AND', conditions: [{ field: 'device', op: 'eq', value: 'Extractor' }] }), assign_team: 'Extraction Specialist Team', assign_role: 'technical_specialist', escalate: 0, order_index: 6 },
     { name: 'P0/P1 → Escalate to Manager', conditions: JSON.stringify({ operator: 'OR', conditions: [{ field: 'priority', op: 'eq', value: 'P0' }, { field: 'priority', op: 'eq', value: 'P1' }] }), assign_team: null, assign_role: 'account_manager', escalate: 1, order_index: 7 },
   ];

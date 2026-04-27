@@ -6,7 +6,10 @@ function evaluateCondition(data, condition) {
     case 'neq': return String(fieldValue ?? '') !== String(value);
     case 'in': return Array.isArray(value) && value.includes(fieldValue);
     case 'contains':
-      return Array.isArray(fieldValue) ? fieldValue.includes(value) : false;
+      // Arrays: exact element match; strings: substring match (needed for A/B/C/D categories)
+      return Array.isArray(fieldValue)
+        ? fieldValue.includes(value)
+        : String(fieldValue ?? '').includes(String(value));
     default: return false;
   }
 }

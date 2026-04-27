@@ -3,36 +3,62 @@
     {
       "name": "Reporter & Laboratory Information",
       "fields": [
+        {"id": "email", "type": "text", "label": "Email", "required": true},
         {"id": "name", "type": "text", "label": "Name", "required": true},
         {"id": "contact_number", "type": "text", "label": "Contact Number", "required": true},
         {
           "id": "lab_type",
           "type": "dropdown",
-          "label": "Laboratory Type",
-          "options": ["Hospital", "Private Lab", "Research Lab", "Blood Bank", "Other"],
+          "label": "What type of laboratory are you?",
+          "options": ["Hospital", "Private Laboratory", "Research Laboratory", "Blood Bank", "Reference Laboratory", "Other"],
           "required": true
         },
-        {"id": "lab_type_other", "type": "text", "label": "If Other, specify", "required": false, "condition": {"field": "lab_type", "value": "Other"}}
+        {
+          "id": "lab_type_other",
+          "type": "text",
+          "label": "If 'Other' for Laboratory Type, please specify:",
+          "required": false,
+          "condition": {"field": "lab_type", "value": "Other"}
+        }
       ]
     },
     {
       "name": "Sample & Extraction",
       "fields": [
-        {"id": "extraction_type", "type": "radio", "label": "Extraction Type", "options": ["Manual", "Automatic"], "required": true},
+        {
+          "id": "extraction_type",
+          "type": "radio",
+          "label": "Type of Sample Extraction",
+          "options": ["Manual", "Automatic"],
+          "required": true
+        },
         {
           "id": "sample_type",
           "type": "radio",
-          "label": "Sample Type",
-          "options": ["Nasopharyngeal Swab", "Blood", "Urine", "Tissue", "Other"],
+          "label": "What sample type was used?",
+          "options": ["Nasopharyngeal Swab", "Blood (Whole Plasma/Serum)", "Urine", "Tissue", "Other"],
           "required": true
         },
-        {"id": "blood_type", "type": "text", "label": "Blood Type", "required": false, "condition": {"field": "sample_type", "value": "Blood"}},
-        {"id": "protocol_followed", "type": "radio", "label": "Protocol Followed?", "options": ["Yes", "No"]},
+        {
+          "id": "blood_type",
+          "type": "text",
+          "label": "If 'Blood' sample type, please specify type (e.g., Plasma, Serum, Whole Blood):",
+          "required": false,
+          "condition": {"field": "sample_type", "value": "Blood (Whole Plasma/Serum)"}
+        },
+        {
+          "id": "protocol_followed",
+          "type": "radio",
+          "label": "Was the extraction performed strictly according to provided protocol?",
+          "options": ["Yes", "No"],
+          "required": true
+        },
         {
           "id": "processing_time",
           "type": "radio",
-          "label": "Processing Time",
-          "options": ["<1h", "2-6h", "6-24h", "24-72h", ">72h"]
+          "label": "How long after collection was the sample processed?",
+          "options": ["Within 1 hour", "2 - 6 hours", "6 - 24 hours", "24 - 72 hours", "> 72 hours", "Other"],
+          "required": true
         }
       ]
     },
@@ -42,27 +68,44 @@
         {
           "id": "issue_type",
           "type": "checkbox",
-          "label": "Issue Type (select all that apply)",
+          "label": "What specific result issue did you observe? (Select all that apply)",
           "options": [
-            "No amplification",
-            "Late CT",
-            "Abnormal curve",
-            "IC failure",
-            "NC amplification",
-            "Low RFU",
-            "Error message",
+            "No amplification curve or visible (Flat line)",
+            "Late CT values (Significantly higher than expected)",
+            "Abnormal curve shape (e.g., lagged, double peak)",
+            "Internal Control (IC) failure/Not detected",
+            "Unexpected amplification in the Negative Control (NC)",
+            "Low signal intensity/Low RFU values",
+            "Specific error message displayed on the device (Please detail below)",
             "Other"
-          ]
+          ],
+          "required": true
         },
         {
           "id": "issue_consistency",
           "type": "radio",
-          "label": "Issue Consistency",
-          "options": ["All samples", "Multiple samples", "Single sample"]
+          "label": "How consistent is this problem across samples?",
+          "options": ["Consistent across all samples", "Only specific samples (multiple)", "Only 1 sample"],
+          "required": true
         },
-        {"id": "run_datetime", "type": "datetime", "label": "Run Date & Time"},
-        {"id": "fam_curve_visible", "type": "radio", "label": "FAM Curve Visible?", "options": ["Yes", "No"]},
-        {"id": "low_rfu", "type": "radio", "label": "Low RFU?", "options": ["Yes", "No"]}
+        {
+          "id": "run_datetime",
+          "type": "datetime",
+          "label": "What is the date and time of the run where the issue occurred?",
+          "required": true
+        },
+        {
+          "id": "fam_curve_visible",
+          "type": "radio",
+          "label": "Were any amplification curves visible for the target (FAM channel)?",
+          "options": ["Yes", "No"]
+        },
+        {
+          "id": "low_rfu",
+          "type": "radio",
+          "label": "Is the RFU (Relative Fluorescence Units) significantly lower than your lab's standard baseline?",
+          "options": ["Yes", "No"]
+        }
       ]
     },
     {
@@ -71,60 +114,184 @@
         {
           "id": "category",
           "type": "radio",
-          "label": "Issue Category",
-          "options": ["Device Failure", "Reagent Issue", "Protocol Issue", "Environmental"]
+          "label": "Please select the primary category of the technical issue you observed.",
+          "options": [
+            "A: Machine/Device Failure (e.g., error codes, heating cooling failure, power issues)",
+            "B: Kit/Reagent Issue (e.g., failed controls, unexpected results, storage-expiry concerns)",
+            "C: Assay/Protocol Issue (e.g., extraction failure, internal control failure, low efficiency)",
+            "D: Environmental Conditions/External Factor (e.g., power cut, ambient temperature fluctuation)",
+            "Other"
+          ],
+          "required": true
         },
         {
           "id": "user_priority",
           "type": "radio",
-          "label": "Your Perceived Priority",
-          "options": ["P1 Critical", "P2 High", "P3 Medium"]
+          "label": "What is the severity of the problem you are experiencing? (Helps us prioritize)",
+          "options": [
+            "P1: Critical - Device/System is completely non-operational (System Down/Total Failure)",
+            "P2: High - System is partially working or output is unreliable/inaccurate (Major impact on operations)",
+            "P3: Medium - Minor intermittent issues or general feedback (Minimal impact on operations)"
+          ],
+          "required": true
         },
         {
           "id": "device_status",
           "type": "radio",
-          "label": "Device Status",
-          "options": ["Fully functional", "Minor issues", "Partially functional", "Not working"]
+          "label": "What is the current operational status of the device?",
+          "options": [
+            "Fully functional",
+            "Functional with minor features failing",
+            "Partially functional (major features failing)",
+            "Not working/Completely non-functional"
+          ],
+          "required": true
         },
-        {"id": "power_issue", "type": "radio", "label": "Power Issue Detected?", "options": ["Yes", "No"]}
+        {
+          "id": "power_issue",
+          "type": "radio",
+          "label": "Did any power interruption occur immediately before or during the run?",
+          "options": ["Yes", "No"],
+          "required": true
+        }
       ]
     },
     {
-      "name": "Controls & Standards",
+      "name": "Controls & Standards Assessment",
       "fields": [
-        {"id": "efficiency", "type": "text", "label": "Efficiency (%)"},
-        {"id": "r_squared", "type": "text", "label": "R² Value"},
-        {"id": "slope", "type": "text", "label": "Slope"},
-        {"id": "ic_valid", "type": "radio", "label": "Internal Control Valid?", "options": ["Yes", "No"]},
-        {"id": "ct_value", "type": "radio", "label": "CT Value Range", "options": ["<26", ">26"]}
+        {
+          "id": "efficiency",
+          "type": "text",
+          "label": "If applicable: what is the Efficiency from the observed parameters of the standard curve?",
+          "required": true
+        },
+        {
+          "id": "r_squared",
+          "type": "text",
+          "label": "If applicable: what is the R² value from the observed parameters of the standard curve?",
+          "required": true
+        },
+        {
+          "id": "slope",
+          "type": "text",
+          "label": "If applicable: what is the slope from the observed parameters of the standard curve?",
+          "required": true
+        },
+        {
+          "id": "ic_amplified",
+          "type": "radio",
+          "label": "Did Internal Controls amplify correctly on all the samples?",
+          "options": ["Yes", "No", "Other"],
+          "required": true
+        },
+        {
+          "id": "ct_value",
+          "type": "radio",
+          "label": "Where is the CT value of the Internal Controls?",
+          "options": ["<26 - Acceptable", ">26 - Not Acceptable", "Other"]
+        },
+        {
+          "id": "positive_control_run",
+          "type": "radio",
+          "label": "Positive Control: Did you run a positive control?",
+          "options": ["Yes", "No"],
+          "required": true
+        },
+        {
+          "id": "positive_control_amplified",
+          "type": "radio",
+          "label": "Positive Control: If Yes, did the positive control amplify correctly?",
+          "options": ["Yes", "No", "Other"],
+          "required": true
+        },
+        {
+          "id": "positive_control_consistency",
+          "type": "radio",
+          "label": "Positive Control: Did the positive control amplify correctly as?",
+          "options": ["All samples", "Few samples", "No sample"],
+          "required": true
+        },
+        {
+          "id": "negative_control_run",
+          "type": "radio",
+          "label": "Negative Control: Did you run a negative control?",
+          "options": ["Yes", "No"],
+          "required": true
+        },
+        {
+          "id": "negative_control_amplified",
+          "type": "radio",
+          "label": "Negative Control: If Yes, did the negative control show any amplification?",
+          "options": ["Yes", "No", "Other"],
+          "required": true
+        },
+        {
+          "id": "negative_control_consistency",
+          "type": "radio",
+          "label": "Negative Control: Did the negative control show any amplification in any of the samples?",
+          "options": ["All samples", "Few samples", "No sample"],
+          "required": true
+        }
       ]
     },
     {
-      "name": "Device Details",
+      "name": "Device & System Details",
       "fields": [
         {
           "id": "device",
           "type": "dropdown",
-          "label": "Device",
-          "options": ["PseeR 16", "PseeR 32", "Portable PCR", "Extractor", "Other"]
+          "label": "What PCR device was used?",
+          "options": ["PseeR 16", "PseeR 32", "Portable PCR mini", "Extractor", "Other"],
+          "required": true
+        },
+        {
+          "id": "device_name_other",
+          "type": "text",
+          "label": "Equipment - Device Name (if selected 'Other' above, or if specific extraction system)"
         },
         {"id": "model_number", "type": "text", "label": "Model Number"},
         {"id": "serial_number", "type": "text", "label": "Serial Number"}
       ]
     },
     {
-      "name": "Reagent Check",
+      "name": "Reagent & Control Check",
       "fields": [
-        {"id": "reagent_storage", "type": "radio", "label": "Reagents Stored Correctly?", "options": ["Yes", "No", "Unsure"]},
-        {"id": "reagent_expiry", "type": "radio", "label": "Reagents Within Expiry?", "options": ["Yes", "No"]},
-        {"id": "protocol_changes", "type": "radio", "label": "Protocol Changes Recently?", "options": ["Yes", "No"]}
+        {
+          "id": "reagent_storage",
+          "type": "radio",
+          "label": "Were the reagents stored according to instructions (e.g., proper temperature)?",
+          "options": ["Yes", "No", "Unsure"],
+          "required": true
+        },
+        {
+          "id": "reagent_expiry",
+          "type": "radio",
+          "label": "Are the reagents within their expiry date?",
+          "options": ["Yes", "No"],
+          "required": true
+        },
+        {
+          "id": "protocol_changes",
+          "type": "radio",
+          "label": "Were any changes made to the standard protocol for this run?",
+          "options": ["Yes", "No"],
+          "required": true
+        }
       ]
     },
     {
-      "name": "Additional Info",
+      "name": "Extra Information",
       "fields": [
-        {"id": "description", "type": "textarea", "label": "Detailed Description of the Issue"},
-        {"id": "file_upload", "type": "file", "label": "Attach Supporting Files (images, run data, error logs)"}
+        {
+          "id": "description",
+          "type": "textarea",
+          "label": "Detailed Description of the Issue, Steps Already Taken to Troubleshoot, and Device Error Messages, Any Feedback (if applicable)"
+        },
+        {
+          "id": "file_upload",
+          "type": "file",
+          "label": "Upload Amplification Plot, Result Screen, or Device Error Message (REQUIRED for technical review)"
+        }
       ]
     }
   ]

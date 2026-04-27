@@ -41,14 +41,14 @@ router.post('/', upload.single('file'), (req, res) => {
     const ticketId = getNextTicketId();
 
     db.prepare(`
-      INSERT INTO complaints (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,category,device,lab_type,region,assigned_team,submitted_by_name,submitted_by_contact,escalated)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      INSERT INTO complaints (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,category,device,lab_type,region,assigned_team,submitted_by_name,submitted_by_contact,submitted_by_email,escalated)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       complaintId, ticketId, 'New',
       priorityResult.priority, priorityResult.reasoning, priorityResult.rule_name,
       flat.category, flat.device, flat.lab_type, flat.region || null,
       primaryRoute?.team || null,
-      flat.name, flat.contact_number,
+      flat.name, flat.contact_number, flat.email || null,
       escalated
     );
 
@@ -94,7 +94,7 @@ router.get('/', authMiddleware, (req, res) => {
 
   if (priority) { q += ' AND c.priority = ?'; params.push(priority); }
   if (status) { q += ' AND c.status = ?'; params.push(status); }
-  if (category) { q += ' AND c.category = ?'; params.push(category); }
+  if (category) { q += ' AND c.category LIKE ?'; params.push(`%${category}%`); }
   if (device) { q += ' AND c.device = ?'; params.push(device); }
   if (from) { q += ' AND date(c.created_at) >= ?'; params.push(from); }
   if (to) { q += ' AND date(c.created_at) <= ?'; params.push(to); }
