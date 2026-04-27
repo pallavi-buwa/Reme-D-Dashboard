@@ -2,26 +2,28 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { complaintsApi, adminApi } from '../api'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
 import Layout from '../components/Layout'
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge'
-
-const VIEWS = [
-  { key: 'all', label: 'All Complaints' },
-  { key: 'mine', label: 'My Complaints' },
-  { key: 'unassigned', label: 'Unassigned' },
-  { key: 'escalated', label: 'Escalated' },
-]
 
 const STATUSES = ['New', 'Triaged', 'Assigned', 'In Progress', 'Escalated', 'Resolved', 'Closed']
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const [complaints, setComplaints] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('all')
   const [filters, setFilters] = useState({ priority: '', status: '', category: '', search: '' })
+
+  const VIEWS = [
+    { key: 'all', label: t('viewAll') },
+    { key: 'mine', label: t('viewMine') },
+    { key: 'unassigned', label: t('viewUnassigned') },
+    { key: 'escalated', label: t('viewEscalated') },
+  ]
 
   useEffect(() => {
     fetchComplaints()
@@ -48,15 +50,21 @@ export default function Dashboard() {
     escalated: complaints.filter(c => c.escalated).length,
   }
 
+  const TABLE_HEADERS = [
+    t('colTicket'), t('colPriority'), t('colStatus'), t('colCategory'),
+    t('colDevice'), t('colLab'), t('colSubmittedBy'), t('colTeam'),
+    t('colAssignedTo'), t('colDate'),
+  ]
+
   return (
     <Layout>
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Total', value: complaints.length, color: 'text-gray-900' },
-          { label: 'Open', value: counts.open, color: 'text-yellow-600' },
+          { label: t('cardTotal'), value: complaints.length, color: 'text-gray-900' },
+          { label: t('cardOpen'), value: counts.open, color: 'text-yellow-600' },
           { label: 'P0/P1', value: counts.P0 + counts.P1, color: 'text-red-600' },
-          { label: 'Escalated', value: counts.escalated, color: 'text-remed-red' },
+          { label: t('cardEscalated'), value: counts.escalated, color: 'text-remed-red' },
         ].map(card => (
           <div key={card.label} className="card p-4">
             <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
@@ -84,24 +92,24 @@ export default function Dashboard() {
       <div className="flex flex-wrap gap-2 mb-4">
         <input
           type="text"
-          placeholder="Search ticket / name…"
+          placeholder={t('searchPlaceholder')}
           className="input w-48 text-sm py-1.5"
           value={filters.search}
           onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
         />
         <select className="input w-36 text-sm py-1.5" value={filters.priority} onChange={e => setFilters(f => ({ ...f, priority: e.target.value }))}>
-          <option value="">All Priorities</option>
+          <option value="">{t('allPriorities')}</option>
           {PRIORITIES.map(p => <option key={p}>{p}</option>)}
         </select>
         <select className="input w-36 text-sm py-1.5" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
-          <option value="">All Statuses</option>
+          <option value="">{t('allStatuses')}</option>
           {STATUSES.map(s => <option key={s}>{s}</option>)}
         </select>
         <select className="input w-44 text-sm py-1.5" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
-          <option value="">All Categories</option>
+          <option value="">{t('allCategories')}</option>
           {['Device Failure', 'Reagent Issue', 'Protocol Issue', 'Environmental'].map(c => <option key={c}>{c}</option>)}
         </select>
-        <button onClick={fetchComplaints} className="btn-secondary text-sm py-1.5">Refresh</button>
+        <button onClick={fetchComplaints} className="btn-secondary text-sm py-1.5">{t('btnRefresh')}</button>
         {user?.role === 'admin' && (
           <button
             onClick={() => complaintsApi.export().then(r => {
@@ -110,7 +118,7 @@ export default function Dashboard() {
             })}
             className="btn-ghost text-sm"
           >
-            Export CSV
+            {t('btnExportCsv')}
           </button>
         )}
       </div>
@@ -121,16 +129,16 @@ export default function Dashboard() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Ticket', 'Priority', 'Status', 'Category', 'Device', 'Lab', 'Submitted By', 'Team', 'Assigned To', 'Date'].map(h => (
+                {TABLE_HEADERS.map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-12 text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={10} className="text-center py-12 text-gray-400">{t('loading')}</td></tr>
               ) : complaints.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-12 text-gray-400">No complaints found</td></tr>
+                <tr><td colSpan={10} className="text-center py-12 text-gray-400">{t('noComplaints')}</td></tr>
               ) : complaints.map(c => (
                 <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -146,7 +154,7 @@ export default function Dashboard() {
                   <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{c.lab_type || '—'}</td>
                   <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{c.submitted_by_name || '—'}</td>
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{c.assigned_team || '—'}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{c.assigned_name || <span className="text-gray-300">Unassigned</span>}</td>
+                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{c.assigned_name || <span className="text-gray-300">{t('unassigned')}</span>}</td>
                   <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
                     {new Date(c.created_at).toLocaleDateString()}
                   </td>

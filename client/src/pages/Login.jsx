@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
+import LanguageToggle from '../components/LanguageToggle'
 
 export default function Login() {
   const { login } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,7 +21,7 @@ export default function Login() {
       await login(email, password)
       navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed')
+      setError(err.response?.data?.error || t('loginFailed'))
     } finally {
       setLoading(false)
     }
@@ -26,6 +29,11 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      {/* Language toggle — top right corner */}
+      <div className="fixed top-4 end-4 z-50">
+        <LanguageToggle />
+      </div>
+
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -35,14 +43,14 @@ export default function Login() {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Reme-D</h1>
-          <p className="text-sm text-gray-500 mt-1">Diagnostic Workflow System</p>
+          <p className="text-sm text-gray-500 mt-1">{t('loginTitle')}</p>
         </div>
 
         <div className="card p-6">
-          <h2 className="text-base font-semibold text-gray-800 mb-5">Staff Login</h2>
+          <h2 className="text-base font-semibold text-gray-800 mb-5">{t('loginHeading')}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="label">Email</label>
+              <label className="label">{t('labelEmail')}</label>
               <input
                 type="email"
                 className="input"
@@ -54,7 +62,7 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <label className="label">{t('labelPassword')}</label>
               <input
                 type="password"
                 className="input"
@@ -70,12 +78,12 @@ export default function Login() {
               </div>
             )}
             <button type="submit" disabled={loading} className="btn-primary w-full justify-center py-2.5">
-              {loading ? 'Signing in…' : 'Sign In'}
+              {loading ? t('signingIn') : t('signIn')}
             </button>
           </form>
 
           <div className="mt-5 pt-4 border-t border-gray-100">
-            <p className="text-xs text-gray-400 font-medium mb-2">Demo accounts</p>
+            <p className="text-xs text-gray-400 font-medium mb-2">{t('demoAccounts')}</p>
             <div className="space-y-1 text-xs text-gray-500">
               <div className="flex justify-between"><span>admin@remed.com</span><span className="text-gray-400">Admin@123</span></div>
               <div className="flex justify-between"><span>specialist@remed.com</span><span className="text-gray-400">Spec@123</span></div>
@@ -85,8 +93,8 @@ export default function Login() {
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          Not staff?{' '}
-          <a href="/" className="text-remed-red hover:underline">Submit a complaint form →</a>
+          {t('notStaff')}{' '}
+          <a href="/" className="text-remed-red hover:underline">{t('submitComplaintLink')}</a>
         </p>
       </div>
     </div>

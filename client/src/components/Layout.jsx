@@ -1,27 +1,30 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-
-const NAV = [
-  { to: '/dashboard', label: 'Dashboard', roles: ['admin', 'technical_specialist', 'account_manager', 'viewer'] },
-  { to: '/analytics', label: 'Analytics', roles: ['admin', 'account_manager'] },
-  { to: '/admin', label: 'Admin', roles: ['admin'] },
-]
+import { useLanguage } from '../context/LanguageContext'
+import LanguageToggle from './LanguageToggle'
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth()
+  const { t } = useLanguage()
   const location = useLocation()
   const navigate = useNavigate()
+
+  const NAV = [
+    { to: '/dashboard', label: t('navDashboard'), roles: ['admin', 'technical_specialist', 'account_manager', 'viewer'] },
+    { to: '/analytics', label: t('navAnalytics'), roles: ['admin', 'account_manager'] },
+    { to: '/admin', label: t('navAdmin'), roles: ['admin'] },
+  ]
+
+  const roleLabel = {
+    admin: t('roleAdmin'),
+    technical_specialist: t('roleTechnicalSpecialist'),
+    account_manager: t('roleAccountManager'),
+    viewer: t('roleViewer'),
+  }
 
   const handleLogout = () => {
     logout()
     navigate('/login')
-  }
-
-  const roleLabel = {
-    admin: 'Administrator',
-    technical_specialist: 'Technical Specialist',
-    account_manager: 'Account Manager',
-    viewer: 'Viewer',
   }
 
   return (
@@ -32,7 +35,7 @@ export default function Layout({ children }) {
           <div className="flex items-center gap-8">
             <Link to="/dashboard" className="flex items-center gap-2">
               <span className="text-remed-red font-bold text-xl tracking-tight">Reme-D</span>
-              <span className="text-remed-blue-grey text-xs font-medium hidden sm:block">Diagnostic System</span>
+              <span className="text-remed-blue-grey text-xs font-medium hidden sm:block">{t('diagnosticSystem')}</span>
             </Link>
             <nav className="hidden md:flex items-center gap-1">
               {NAV.filter(n => n.roles.includes(user?.role)).map(n => (
@@ -51,8 +54,9 @@ export default function Layout({ children }) {
             </nav>
           </div>
           <div className="flex items-center gap-3">
+            <LanguageToggle />
             <a href="/" target="_blank" rel="noopener noreferrer" className="btn-ghost text-xs hidden sm:block">
-              Submit Form ↗
+              {t('submitForm')}
             </a>
             <div className="flex items-center gap-2">
               <div className="text-right hidden sm:block">
@@ -60,7 +64,7 @@ export default function Layout({ children }) {
                 <div className="text-xs text-gray-400">{roleLabel[user?.role] || user?.role}</div>
               </div>
               <button onClick={handleLogout} className="btn-secondary text-xs px-3 py-1.5">
-                Log out
+                {t('logOut')}
               </button>
             </div>
           </div>
@@ -73,7 +77,7 @@ export default function Layout({ children }) {
       </main>
 
       <footer className="border-t border-gray-200 bg-white py-3 text-center text-xs text-gray-400">
-        Reme-D Diagnostic Workflow System · Internal Use Only
+        {t('footer')}
       </footer>
     </div>
   )

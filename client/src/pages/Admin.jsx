@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { adminApi } from '../api'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
 import Layout from '../components/Layout'
 import { useNavigate } from 'react-router-dom'
 
@@ -35,8 +36,9 @@ function Tab({ active, onClick, children }) {
 
 // ─── Users ─────────────────────────────────────────────────────────────────────
 function UsersTab() {
+  const { t } = useLanguage()
   const [users, setUsers] = useState([])
-  const [modal, setModal] = useState(null) // null | 'create' | user object
+  const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'viewer', region: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -58,11 +60,11 @@ function UsersTab() {
       }
       const { data } = await adminApi.getUsers(); setUsers(data)
       setModal(null)
-    } catch (e) { setError(e.response?.data?.error || 'Error') } finally { setSaving(false) }
+    } catch (e) { setError(e.response?.data?.error || t('errorGeneric')) } finally { setSaving(false) }
   }
 
   async function handleDeactivate(id) {
-    if (!confirm('Deactivate this user?')) return
+    if (!confirm(t('deactivateConfirm'))) return
     await adminApi.deleteUser(id)
     const { data } = await adminApi.getUsers(); setUsers(data)
   }
@@ -70,15 +72,15 @@ function UsersTab() {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-gray-500">{users.length} users</p>
-        <button onClick={openCreate} className="btn-primary text-sm">+ Add User</button>
+        <p className="text-sm text-gray-500">{t('usersCount', users.length)}</p>
+        <button onClick={openCreate} className="btn-primary text-sm">{t('addUser')}</button>
       </div>
 
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {['Name', 'Email', 'Role', 'Region', 'Status', ''].map(h => (
+              {[t('colName'), t('colEmail'), t('colRole'), t('colRegion'), t('colStatus'), ''].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -90,10 +92,14 @@ function UsersTab() {
                 <td className="px-4 py-3 text-gray-500">{u.email}</td>
                 <td className="px-4 py-3"><span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{u.role}</span></td>
                 <td className="px-4 py-3 text-gray-400 text-xs">{u.region || '—'}</td>
-                <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${u.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>{u.active ? 'Active' : 'Inactive'}</span></td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${u.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                    {u.active ? t('statusActive') : t('statusInactive')}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => openEdit(u)} className="btn-ghost text-xs mr-1">Edit</button>
-                  {u.active && <button onClick={() => handleDeactivate(u.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Deactivate</button>}
+                  <button onClick={() => openEdit(u)} className="btn-ghost text-xs mr-1">{t('btnEdit')}</button>
+                  {u.active && <button onClick={() => handleDeactivate(u.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">{t('btnDeactivate')}</button>}
                 </td>
               </tr>
             ))}
@@ -102,32 +108,37 @@ function UsersTab() {
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'Add User' : `Edit ${modal.name}`} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? t('modalAddUser') : t('modalEditUser', modal.name)} onClose={() => setModal(null)}>
           <div className="space-y-3">
-            {['name', 'email'].map(f => (
-              <div key={f}>
-                <label className="label capitalize">{f}</label>
-                <input type={f === 'email' ? 'email' : 'text'} className="input" value={form[f]} onChange={e => setForm(p => ({ ...p, [f]: e.target.value }))} />
-              </div>
-            ))}
             <div>
-              <label className="label">Password {modal !== 'create' && <span className="text-gray-400 font-normal">(leave blank to keep)</span>}</label>
+              <label className="label capitalize">{t('labelName')}</label>
+              <input type="text" className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">{t('labelEmail')}</label>
+              <input type="email" className="input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">
+                {t('labelPasswordOptional')}
+                {modal !== 'create' && <span className="text-gray-400 font-normal"> {t('leaveBlank')}</span>}
+              </label>
               <input type="password" className="input" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder={modal !== 'create' ? 'unchanged' : ''} />
             </div>
             <div>
-              <label className="label">Role</label>
+              <label className="label">{t('labelRole')}</label>
               <select className="input" value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
                 {ROLES.map(r => <option key={r}>{r}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Region (optional)</label>
-              <input type="text" className="input" value={form.region} onChange={e => setForm(p => ({ ...p, region: e.target.value }))} placeholder="e.g. Egypt" />
+              <label className="label">{t('labelRegionOptional')}</label>
+              <input type="text" className="input" value={form.region} onChange={e => setForm(p => ({ ...p, region: e.target.value }))} placeholder={t('regionPlaceholder')} />
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? 'Saving…' : 'Save'}</button>
-              <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? t('saving') : t('btnSave')}</button>
+              <button onClick={() => setModal(null)} className="btn-secondary flex-1">{t('btnCancel')}</button>
             </div>
           </div>
         </Modal>
@@ -138,6 +149,7 @@ function UsersTab() {
 
 // ─── Priority Rules ───────────────────────────────────────────────────────────
 function PriorityRulesTab() {
+  const { t } = useLanguage()
   const [rules, setRules] = useState([])
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', conditions: '', result_priority: 'P2', reasoning: '', order_index: 100, active: true })
@@ -161,12 +173,12 @@ function PriorityRulesTab() {
       const { data } = await adminApi.getPriorityRules(); setRules(data)
       setModal(null)
     } catch (e) {
-      setError(e.response?.data?.error || (e instanceof SyntaxError ? 'Invalid JSON in conditions' : 'Error'))
+      setError(e.response?.data?.error || (e instanceof SyntaxError ? t('invalidJson') : t('errorGeneric')))
     } finally { setSaving(false) }
   }
 
   async function handleDelete(id) {
-    if (!confirm('Delete this rule?')) return
+    if (!confirm(t('deleteRuleConfirm'))) return
     await adminApi.deletePriorityRule(id)
     const { data } = await adminApi.getPriorityRules(); setRules(data)
   }
@@ -179,8 +191,8 @@ function PriorityRulesTab() {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-gray-500">{rules.length} rules · evaluated in order</p>
-        <button onClick={openCreate} className="btn-primary text-sm">+ Add Rule</button>
+        <p className="text-sm text-gray-500">{t('priorityRulesCount', rules.length)}</p>
+        <button onClick={openCreate} className="btn-primary text-sm">{t('addRule')}</button>
       </div>
 
       <div className="space-y-2">
@@ -194,40 +206,40 @@ function PriorityRulesTab() {
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => toggleActive(r)} className={`text-xs px-2 py-0.5 rounded-full border ${r.active ? 'border-green-300 text-green-600 bg-green-50' : 'border-gray-200 text-gray-400'}`}>
-                {r.active ? 'Active' : 'Inactive'}
+                {r.active ? t('statusActive') : t('statusInactive')}
               </button>
-              <button onClick={() => openEdit(r)} className="btn-ghost text-xs">Edit</button>
-              <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Delete</button>
+              <button onClick={() => openEdit(r)} className="btn-ghost text-xs">{t('btnEdit')}</button>
+              <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">{t('btnDelete')}</button>
             </div>
           </div>
         ))}
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'New Priority Rule' : `Edit: ${modal.name}`} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? t('modalNewPriority') : `${t('modalEditPrefix')} ${modal.name}`} onClose={() => setModal(null)}>
           <div className="space-y-3">
-            <div><label className="label">Rule Name</label><input className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div><label className="label">{t('labelRuleName')}</label><input className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
             <div>
-              <label className="label">Result Priority</label>
+              <label className="label">{t('labelResultPriority')}</label>
               <select className="input" value={form.result_priority} onChange={e => setForm(p => ({ ...p, result_priority: e.target.value }))}>
                 {PRIORITIES.map(p => <option key={p}>{p}</option>)}
               </select>
             </div>
-            <div><label className="label">Order Index (lower = evaluated first)</label><input type="number" className="input" value={form.order_index} onChange={e => setForm(p => ({ ...p, order_index: +e.target.value }))} /></div>
+            <div><label className="label">{t('labelOrderIndex')}</label><input type="number" className="input" value={form.order_index} onChange={e => setForm(p => ({ ...p, order_index: +e.target.value }))} /></div>
             <div>
-              <label className="label">Conditions (JSON)</label>
+              <label className="label">{t('labelConditionsJson')}</label>
               <textarea rows={8} className="input font-mono text-xs resize-none" value={form.conditions} onChange={e => setForm(p => ({ ...p, conditions: e.target.value }))} />
-              <p className="text-xs text-gray-400 mt-1">ops: <code>eq neq contains in truthy</code> · operator: <code>AND OR</code></p>
+              <p className="text-xs text-gray-400 mt-1">{t('conditionsHint')}</p>
             </div>
-            <div><label className="label">Reasoning (shown in complaint)</label><textarea rows={2} className="input resize-none" value={form.reasoning} onChange={e => setForm(p => ({ ...p, reasoning: e.target.value }))} /></div>
+            <div><label className="label">{t('labelReasoning')}</label><textarea rows={2} className="input resize-none" value={form.reasoning} onChange={e => setForm(p => ({ ...p, reasoning: e.target.value }))} /></div>
             <div className="flex items-center gap-2">
               <input type="checkbox" id="active" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} />
-              <label htmlFor="active" className="text-sm text-gray-700">Active</label>
+              <label htmlFor="active" className="text-sm text-gray-700">{t('labelActive')}</label>
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? 'Saving…' : 'Save'}</button>
-              <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? t('saving') : t('btnSave')}</button>
+              <button onClick={() => setModal(null)} className="btn-secondary flex-1">{t('btnCancel')}</button>
             </div>
           </div>
         </Modal>
@@ -238,6 +250,7 @@ function PriorityRulesTab() {
 
 // ─── Routing Rules ────────────────────────────────────────────────────────────
 function RoutingRulesTab() {
+  const { t } = useLanguage()
   const [rules, setRules] = useState([])
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: '', conditions: '', assign_team: '', assign_role: '', escalate: false, order_index: 100, active: true })
@@ -261,12 +274,12 @@ function RoutingRulesTab() {
       const { data } = await adminApi.getRoutingRules(); setRules(data)
       setModal(null)
     } catch (e) {
-      setError(e.response?.data?.error || (e instanceof SyntaxError ? 'Invalid JSON in conditions' : 'Error'))
+      setError(e.response?.data?.error || (e instanceof SyntaxError ? t('invalidJson') : t('errorGeneric')))
     } finally { setSaving(false) }
   }
 
   async function handleDelete(id) {
-    if (!confirm('Delete this rule?')) return
+    if (!confirm(t('deleteRuleConfirm'))) return
     await adminApi.deleteRoutingRule(id)
     const { data } = await adminApi.getRoutingRules(); setRules(data)
   }
@@ -274,59 +287,61 @@ function RoutingRulesTab() {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-gray-500">{rules.length} routing rules</p>
-        <button onClick={openCreate} className="btn-primary text-sm">+ Add Rule</button>
+        <p className="text-sm text-gray-500">{t('routingRulesCount', rules.length)}</p>
+        <button onClick={openCreate} className="btn-primary text-sm">{t('addRule')}</button>
       </div>
 
       <div className="space-y-2">
         {rules.map(r => (
           <div key={r.id} className={`card p-4 flex flex-wrap gap-3 items-center ${!r.active ? 'opacity-50' : ''}`}>
             <span className="text-xs text-gray-400 font-mono w-8">#{r.order_index}</span>
-            {r.escalate ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">🔺 Escalate</span> : null}
+            {r.escalate ? <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">🔺 {t('viewEscalated')}</span> : null}
             <div className="flex-1 min-w-0">
               <div className="font-medium text-sm text-gray-800">{r.name}</div>
               <div className="text-xs text-gray-400">{r.assign_team ? `→ ${r.assign_team}` : ''} {r.assign_role ? `(${r.assign_role})` : ''}</div>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${r.active ? 'border-green-300 text-green-600 bg-green-50' : 'border-gray-200 text-gray-400'}`}>{r.active ? 'Active' : 'Inactive'}</span>
-              <button onClick={() => openEdit(r)} className="btn-ghost text-xs">Edit</button>
-              <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Delete</button>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${r.active ? 'border-green-300 text-green-600 bg-green-50' : 'border-gray-200 text-gray-400'}`}>
+                {r.active ? t('statusActive') : t('statusInactive')}
+              </span>
+              <button onClick={() => openEdit(r)} className="btn-ghost text-xs">{t('btnEdit')}</button>
+              <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">{t('btnDelete')}</button>
             </div>
           </div>
         ))}
       </div>
 
       {modal && (
-        <Modal title={modal === 'create' ? 'New Routing Rule' : `Edit: ${modal.name}`} onClose={() => setModal(null)}>
+        <Modal title={modal === 'create' ? t('modalNewRouting') : `${t('modalEditPrefix')} ${modal.name}`} onClose={() => setModal(null)}>
           <div className="space-y-3">
-            <div><label className="label">Rule Name</label><input className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
-            <div><label className="label">Assign Team</label><input className="input" value={form.assign_team} onChange={e => setForm(p => ({ ...p, assign_team: e.target.value }))} placeholder="Technical Engineering" /></div>
+            <div><label className="label">{t('labelRuleName')}</label><input className="input" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div><label className="label">{t('labelAssignTeam')}</label><input className="input" value={form.assign_team} onChange={e => setForm(p => ({ ...p, assign_team: e.target.value }))} placeholder="Technical Engineering" /></div>
             <div>
-              <label className="label">Assign Role</label>
+              <label className="label">{t('labelAssignRole')}</label>
               <select className="input" value={form.assign_role} onChange={e => setForm(p => ({ ...p, assign_role: e.target.value }))}>
-                <option value="">— None —</option>
+                <option value="">{t('roleNone')}</option>
                 {ROLES.map(r => <option key={r}>{r}</option>)}
               </select>
             </div>
-            <div><label className="label">Order Index</label><input type="number" className="input" value={form.order_index} onChange={e => setForm(p => ({ ...p, order_index: +e.target.value }))} /></div>
+            <div><label className="label">{t('labelOrderIndexShort')}</label><input type="number" className="input" value={form.order_index} onChange={e => setForm(p => ({ ...p, order_index: +e.target.value }))} /></div>
             <div>
-              <label className="label">Conditions (JSON)</label>
+              <label className="label">{t('labelConditionsJson')}</label>
               <textarea rows={6} className="input font-mono text-xs resize-none" value={form.conditions} onChange={e => setForm(p => ({ ...p, conditions: e.target.value }))} />
             </div>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={form.escalate} onChange={e => setForm(p => ({ ...p, escalate: e.target.checked }))} />
-                Triggers escalation
+                {t('triggersEscalation')}
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} />
-                Active
+                {t('labelActive')}
               </label>
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? 'Saving…' : 'Save'}</button>
-              <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">{saving ? t('saving') : t('btnSave')}</button>
+              <button onClick={() => setModal(null)} className="btn-secondary flex-1">{t('btnCancel')}</button>
             </div>
           </div>
         </Modal>
@@ -338,6 +353,7 @@ function RoutingRulesTab() {
 // ─── Main Admin Page ──────────────────────────────────────────────────────────
 export default function Admin() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [tab, setTab] = useState('users')
 
@@ -349,14 +365,14 @@ export default function Admin() {
   return (
     <Layout>
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Admin Panel</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage users, priority rules, and routing configuration</p>
+        <h1 className="text-xl font-bold text-gray-900">{t('adminTitle')}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t('adminSubtitle')}</p>
       </div>
 
       <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-lg p-1 w-fit">
-        <Tab active={tab === 'users'} onClick={() => setTab('users')}>Users</Tab>
-        <Tab active={tab === 'priority'} onClick={() => setTab('priority')}>Priority Rules</Tab>
-        <Tab active={tab === 'routing'} onClick={() => setTab('routing')}>Routing Rules</Tab>
+        <Tab active={tab === 'users'} onClick={() => setTab('users')}>{t('tabUsers')}</Tab>
+        <Tab active={tab === 'priority'} onClick={() => setTab('priority')}>{t('tabPriority')}</Tab>
+        <Tab active={tab === 'routing'} onClick={() => setTab('routing')}>{t('tabRouting')}</Tab>
       </div>
 
       {tab === 'users' && <UsersTab />}

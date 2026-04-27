@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { complaintsApi, adminApi } from '../api'
 import { useAuth } from '../context/AuthContext'
+import { useLanguage } from '../context/LanguageContext'
 import Layout from '../components/Layout'
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge'
 
@@ -41,6 +42,7 @@ function SignalPill({ label, active }) {
 export default function ComplaintDetail() {
   const { id } = useParams()
   const { user } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const [complaint, setComplaint] = useState(null)
   const [users, setUsers] = useState([])
@@ -94,8 +96,14 @@ export default function ComplaintDetail() {
     }
   }
 
-  if (loading) return <Layout><div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-remed-red border-t-transparent" /></div></Layout>
-  if (!complaint) return <Layout><div className="text-center py-16 text-gray-400">Complaint not found</div></Layout>
+  if (loading) return (
+    <Layout>
+      <div className="flex justify-center py-16">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-remed-red border-t-transparent" />
+      </div>
+    </Layout>
+  )
+  if (!complaint) return <Layout><div className="text-center py-16 text-gray-400">{t('complaintNotFound')}</div></Layout>
 
   const trueSignals = Object.entries(complaint.signals || {}).filter(([, v]) => v === true)
   const falseSignals = Object.entries(complaint.signals || {}).filter(([, v]) => v === false)
@@ -103,11 +111,11 @@ export default function ComplaintDetail() {
   return (
     <Layout>
       <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => navigate(-1)} className="btn-ghost text-sm">← Back</button>
+        <button onClick={() => navigate(-1)} className="btn-ghost text-sm">{t('back')}</button>
         <div className="flex-1" />
         <PriorityBadge priority={complaint.priority} />
         <StatusBadge status={complaint.status} />
-        {complaint.escalated ? <span className="text-xs text-red-600 font-medium">🔺 Escalated</span> : null}
+        {complaint.escalated ? <span className="text-xs text-red-600 font-medium">{t('escalatedBadge')}</span> : null}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -119,7 +127,7 @@ export default function ComplaintDetail() {
               <div>
                 <div className="font-mono text-lg font-bold text-gray-900">{complaint.ticket_id}</div>
                 <div className="text-sm text-gray-500 mt-0.5">
-                  Submitted by <strong>{complaint.submitted_by_name}</strong> · {complaint.submitted_by_contact}
+                  {t('submittedBy')} <strong>{complaint.submitted_by_name}</strong> · {complaint.submitted_by_contact}
                 </div>
                 <div className="text-xs text-gray-400 mt-1">
                   {new Date(complaint.created_at).toLocaleString()} · {complaint.lab_type} {complaint.region ? `· ${complaint.region}` : ''}
@@ -127,26 +135,26 @@ export default function ComplaintDetail() {
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-              <div><span className="text-xs text-gray-400 block">Category</span><strong>{complaint.category || '—'}</strong></div>
-              <div><span className="text-xs text-gray-400 block">Device</span><strong>{complaint.device || '—'}</strong></div>
-              <div><span className="text-xs text-gray-400 block">Team</span><strong>{complaint.assigned_team || '—'}</strong></div>
-              <div><span className="text-xs text-gray-400 block">Assigned To</span><strong>{complaint.assigned_name || 'Unassigned'}</strong></div>
+              <div><span className="text-xs text-gray-400 block">{t('labelCategory')}</span><strong>{complaint.category || '—'}</strong></div>
+              <div><span className="text-xs text-gray-400 block">{t('labelDevice')}</span><strong>{complaint.device || '—'}</strong></div>
+              <div><span className="text-xs text-gray-400 block">{t('labelTeam')}</span><strong>{complaint.assigned_team || '—'}</strong></div>
+              <div><span className="text-xs text-gray-400 block">{t('labelAssignedTo')}</span><strong>{complaint.assigned_name || t('unassigned')}</strong></div>
             </div>
           </div>
 
           {/* Priority reasoning */}
           <div className="card p-4 border-l-4 border-remed-red">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Priority Reasoning · {complaint.priority}</div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('priorityReasoningTitle')} · {complaint.priority}</div>
             <p className="text-sm text-gray-700">{complaint.priority_reasoning}</p>
             {complaint.priority_rule_name && (
-              <p className="text-xs text-gray-400 mt-1">Rule: <em>{complaint.priority_rule_name}</em></p>
+              <p className="text-xs text-gray-400 mt-1">{t('ruleLabel')} <em>{complaint.priority_rule_name}</em></p>
             )}
           </div>
 
           {/* Derived signals */}
           {Object.keys(complaint.signals || {}).length > 0 && (
             <div className="card p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Derived Signals</h4>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('derivedSignals')}</h4>
               <div className="flex flex-wrap gap-1.5">
                 {trueSignals.map(([k]) => <SignalPill key={k} label={k} active={true} />)}
                 {falseSignals.map(([k]) => <SignalPill key={k} label={k} active={false} />)}
@@ -156,7 +164,7 @@ export default function ComplaintDetail() {
 
           {/* Section responses */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Submitted Form Data</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('submittedFormData')}</h3>
             {complaint.sections?.map(s => (
               <SectionCard key={s.name} name={s.name} data={s.data} />
             ))}
@@ -165,7 +173,7 @@ export default function ComplaintDetail() {
           {/* Attachments */}
           {complaint.attachments?.length > 0 && (
             <div className="card p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Attachments</h4>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('attachments')}</h4>
               {complaint.attachments.map(a => (
                 <a key={a.id} href={`/uploads/${a.filename}`} target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-2 text-sm text-remed-red hover:underline">
@@ -182,23 +190,23 @@ export default function ComplaintDetail() {
           {/* Actions */}
           {canEdit && (
             <div className="card p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Update Complaint</h4>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('updateComplaint')}</h4>
               <div className="space-y-3">
                 <div>
-                  <label className="label text-xs">Status</label>
+                  <label className="label text-xs">{t('labelStatus')}</label>
                   <select className="input text-sm" value={statusChange} onChange={e => setStatusChange(e.target.value)}>
                     {STATUSES.map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="label text-xs">Assign To</label>
+                  <label className="label text-xs">{t('labelAssignTo')}</label>
                   <select className="input text-sm" value={assignTo} onChange={e => setAssignTo(e.target.value)}>
-                    <option value="">— Unassigned —</option>
+                    <option value="">{t('unassignedOption')}</option>
                     {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                   </select>
                 </div>
                 <button onClick={handleUpdate} disabled={saving} className="btn-primary w-full text-sm">
-                  {saving ? 'Saving…' : 'Save Changes'}
+                  {saving ? t('saving') : t('saveChanges')}
                 </button>
               </div>
             </div>
@@ -206,9 +214,9 @@ export default function ComplaintDetail() {
 
           {/* Notes */}
           <div className="card p-4">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Internal Notes</h4>
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('internalNotes')}</h4>
             <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
-              {complaint.notes?.length === 0 && <p className="text-xs text-gray-400">No notes yet.</p>}
+              {complaint.notes?.length === 0 && <p className="text-xs text-gray-400">{t('noNotes')}</p>}
               {complaint.notes?.map(n => (
                 <div key={n.id} className="bg-gray-50 rounded p-2.5">
                   <div className="flex justify-between text-xs text-gray-400 mb-1">
@@ -221,15 +229,15 @@ export default function ComplaintDetail() {
             </div>
             {canEdit && (
               <div className="space-y-2">
-                <textarea rows={2} className="input text-sm resize-none" placeholder="Add a note…" value={note} onChange={e => setNote(e.target.value)} />
-                <button onClick={handleAddNote} disabled={saving || !note.trim()} className="btn-primary w-full text-sm">Add Note</button>
+                <textarea rows={2} className="input text-sm resize-none" placeholder={t('addNotePlaceholder')} value={note} onChange={e => setNote(e.target.value)} />
+                <button onClick={handleAddNote} disabled={saving || !note.trim()} className="btn-primary w-full text-sm">{t('addNote')}</button>
               </div>
             )}
           </div>
 
           {/* Status history */}
           <div className="card p-4">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Status History</h4>
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('statusHistory')}</h4>
             <div className="space-y-2">
               {complaint.status_history?.map(h => (
                 <div key={h.id} className="flex items-start gap-2 text-xs">
@@ -238,7 +246,7 @@ export default function ComplaintDetail() {
                     <span className="text-gray-700">
                       {h.from_status ? `${h.from_status} → ` : ''}<strong>{h.to_status}</strong>
                     </span>
-                    <span className="text-gray-400 ml-1">by {h.changed_by}</span>
+                    <span className="text-gray-400 ml-1">{t('by')} {h.changed_by}</span>
                     {h.notes && <p className="text-gray-400 mt-0.5">{h.notes}</p>}
                     <p className="text-gray-300">{new Date(h.changed_at).toLocaleString()}</p>
                   </div>
@@ -250,12 +258,12 @@ export default function ComplaintDetail() {
           {/* Assignment history */}
           {complaint.assignment_history?.length > 0 && (
             <div className="card p-4">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Assignment History</h4>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('assignmentHistory')}</h4>
               <div className="space-y-2">
                 {complaint.assignment_history.map(h => (
                   <div key={h.id} className="text-xs text-gray-600">
-                    <span>{h.assigned_to || 'Unassigned'}</span>
-                    <span className="text-gray-400 ml-1">by {h.assigned_by}</span>
+                    <span>{h.assigned_to || t('unassigned')}</span>
+                    <span className="text-gray-400 ml-1">{t('by')} {h.assigned_by}</span>
                     <p className="text-gray-300">{new Date(h.assigned_at).toLocaleString()}</p>
                   </div>
                 ))}

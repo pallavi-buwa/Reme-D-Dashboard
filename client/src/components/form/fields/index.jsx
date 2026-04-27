@@ -1,4 +1,7 @@
+import { useLanguage } from '../../../context/LanguageContext'
+
 export function TextField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   return (
     <div>
       <label className="label">
@@ -12,12 +15,13 @@ export function TextField({ field, value, onChange, error }) {
         onChange={e => onChange(field.id, e.target.value)}
         placeholder={field.placeholder || ''}
       />
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }
 
 export function TextareaField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   return (
     <div>
       <label className="label">
@@ -31,12 +35,13 @@ export function TextareaField({ field, value, onChange, error }) {
         onChange={e => onChange(field.id, e.target.value)}
         placeholder={field.placeholder || ''}
       />
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }
 
 export function RadioField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   return (
     <div>
       <label className="label">
@@ -65,12 +70,13 @@ export function RadioField({ field, value, onChange, error }) {
           </label>
         ))}
       </div>
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }
 
 export function DropdownField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   return (
     <div>
       <label className="label">
@@ -82,17 +88,18 @@ export function DropdownField({ field, value, onChange, error }) {
         value={value || ''}
         onChange={e => onChange(field.id, e.target.value)}
       >
-        <option value="">— Select —</option>
+        <option value="">{t('selectPlaceholder')}</option>
         {(field.options || []).map(opt => (
           <option key={opt} value={opt}>{opt}</option>
         ))}
       </select>
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }
 
 export function CheckboxField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   const selected = Array.isArray(value) ? value : []
   const toggle = (opt) => {
     const next = selected.includes(opt)
@@ -133,12 +140,13 @@ export function CheckboxField({ field, value, onChange, error }) {
           </label>
         ))}
       </div>
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }
 
 export function DateTimeField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   return (
     <div>
       <label className="label">
@@ -151,12 +159,13 @@ export function DateTimeField({ field, value, onChange, error }) {
         value={value || ''}
         onChange={e => onChange(field.id, e.target.value)}
       />
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }
 
 export function FileField({ field, value, onChange, error }) {
+  const { t } = useLanguage()
   return (
     <div>
       <label className="label">
@@ -178,12 +187,12 @@ export function FileField({ field, value, onChange, error }) {
           {value ? (
             <span className="text-sm text-remed-red font-medium">{value.name}</span>
           ) : (
-            <span className="text-sm text-gray-500">Click to upload or drag and drop</span>
+            <span className="text-sm text-gray-500">{t('uploadClick')}</span>
           )}
-          <span className="text-xs text-gray-400">Images, PDF, CSV, Excel, Log files (max 20MB)</span>
+          <span className="text-xs text-gray-400">{t('uploadTypes')}</span>
         </label>
       </div>
-      {error && <p className="text-remed-red text-xs mt-1">{error}</p>}
+      {error && <p className="text-remed-red text-xs mt-1">{t('fieldRequired')}</p>}
     </div>
   )
 }

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import FormStep from './FormStep'
+import { useLanguage } from '../../context/LanguageContext'
 
 export default function FormWizard({ schema, onSubmit, submitting }) {
+  const { t } = useLanguage()
   const sections = schema.sections
   const [step, setStep] = useState(0)
   const [formData, setFormData] = useState(() =>
@@ -24,11 +26,10 @@ export default function FormWizard({ schema, onSubmit, submitting }) {
     const errs = {}
     for (const field of currentSection.fields) {
       if (!field.required) continue
-      // Skip conditional fields that aren't visible
       if (field.condition && currentValues[field.condition.field] !== field.condition.value) continue
       const val = currentValues[field.id]
       if (!val || (Array.isArray(val) && !val.length)) {
-        errs[field.id] = 'This field is required'
+        errs[field.id] = t('fieldRequired')
       }
     }
     return errs
@@ -53,14 +54,13 @@ export default function FormWizard({ schema, onSubmit, submitting }) {
   }
 
   const isLast = step === sections.length - 1
-  const progress = ((step) / sections.length) * 100
 
   return (
     <div>
       {/* Progress bar */}
       <div className="mb-6">
         <div className="flex justify-between text-xs text-gray-500 mb-1">
-          <span>Step {step + 1} of {sections.length}</span>
+          <span>{t('stepOf', step + 1, sections.length)}</span>
           <span>{currentSection.name}</span>
         </div>
         <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
@@ -85,7 +85,7 @@ export default function FormWizard({ schema, onSubmit, submitting }) {
       {/* Section header */}
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-900">{currentSection.name}</h2>
-        <p className="text-sm text-gray-500 mt-0.5">Complete all required fields below</p>
+        <p className="text-sm text-gray-500 mt-0.5">{t('completeFields')}</p>
       </div>
 
       {/* Fields */}
@@ -104,7 +104,7 @@ export default function FormWizard({ schema, onSubmit, submitting }) {
           disabled={step === 0}
           className="btn-secondary"
         >
-          ← Back
+          {t('btnBack')}
         </button>
 
         {isLast ? (
@@ -114,11 +114,11 @@ export default function FormWizard({ schema, onSubmit, submitting }) {
             disabled={submitting}
             className="btn-primary px-6"
           >
-            {submitting ? 'Submitting…' : 'Submit Report →'}
+            {submitting ? t('btnSubmitting') : t('btnSubmitReport')}
           </button>
         ) : (
           <button type="button" onClick={handleNext} className="btn-primary">
-            Next →
+            {t('btnNext')}
           </button>
         )}
       </div>
