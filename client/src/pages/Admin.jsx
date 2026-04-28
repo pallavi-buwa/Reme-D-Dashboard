@@ -72,7 +72,7 @@ function UsersTab() {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-gray-500">{t('usersCount', users.length)}</p>
+        <p className="text-sm text-gray-500">{t('usersCount', users.filter(u => u.active).length)}</p>
         <button onClick={openCreate} className="btn-primary text-sm">{t('addUser')}</button>
       </div>
 
@@ -80,26 +80,21 @@ function UsersTab() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {[t('colName'), t('colEmail'), t('colRole'), t('colRegion'), t('colStatus'), ''].map(h => (
+              {[t('colName'), t('colEmail'), t('colRole'), t('colRegion'), ''].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {users.map(u => (
+            {users.filter(u => u.active).map(u => (
               <tr key={u.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{u.name}</td>
                 <td className="px-4 py-3 text-gray-500">{u.email}</td>
                 <td className="px-4 py-3"><span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{u.role}</span></td>
                 <td className="px-4 py-3 text-gray-400 text-xs">{u.region || '—'}</td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${u.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                    {u.active ? t('statusActive') : t('statusInactive')}
-                  </span>
-                </td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => openEdit(u)} className="btn-ghost text-xs mr-1">{t('btnEdit')}</button>
-                  {u.active && <button onClick={() => handleDeactivate(u.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">{t('btnDeactivate')}</button>}
+                  <button onClick={() => handleDeactivate(u.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">{t('btnDeactivate')}</button>
                 </td>
               </tr>
             ))}
