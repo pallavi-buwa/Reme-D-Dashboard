@@ -118,7 +118,8 @@ function UsersTab() {
                 {t('labelPasswordOptional')}
                 {modal !== 'create' && <span className="text-gray-400 font-normal"> {t('leaveBlank')}</span>}
               </label>
-              <input type="password" className="input" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder={modal !== 'create' ? 'unchanged' : ''} />
+              <input type="password" className="input" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder={modal !== 'create' ? 'unchanged' : 'Min 8 chars, 1 uppercase, 1 number'} />
+              {modal === 'create' && <p className="text-xs text-gray-400 mt-1">Min 8 characters · at least 1 uppercase letter · at least 1 number</p>}
             </div>
             <div>
               <label className="label">{t('labelRole')}</label>
