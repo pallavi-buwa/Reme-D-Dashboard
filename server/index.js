@@ -61,6 +61,14 @@ app.use('/api/analytics', analyticsRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
 
+// ── Serve React frontend in production ────────────────────────────────────────
+if (process.env.NODE_ENV === 'production') {
+  const frontendDist = path.join(__dirname, '../client/dist');
+  app.use(express.static(frontendDist));
+  // All non-API routes serve the React app (handles client-side routing)
+  app.get('*', (req, res) => res.sendFile(path.join(frontendDist, 'index.html')));
+}
+
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   if (err.message?.startsWith('CORS')) return res.status(403).json({ error: 'CORS policy violation' });
