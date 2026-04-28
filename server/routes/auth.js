@@ -1,25 +1,13 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
 const { db } = require('../database');
 const { authMiddleware, JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
 
-// ── Login rate limiter ────────────────────────────────────────────────────────
-// Max 10 attempts per IP per 15 minutes — blocks brute-force attacks
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many login attempts. Please wait 15 minutes and try again.' },
-  skipSuccessfulRequests: true, // Only counts failed attempts against the limit
-});
-
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
-router.post('/login', loginLimiter, (req, res) => {
+router.post('/login', (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
