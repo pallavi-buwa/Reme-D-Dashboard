@@ -82,14 +82,6 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <p className="text-xs text-gray-400 font-medium mb-2">{t('demoAccounts')}</p>
-            <div className="space-y-1 text-xs text-gray-500">
-              <div className="flex justify-between"><span>admin@remed.com</span><span className="text-gray-400">Admin@123</span></div>
-              <div className="flex justify-between"><span>specialist@remed.com</span><span className="text-gray-400">Spec@123</span></div>
-              <div className="flex justify-between"><span>manager@remed.com</span><span className="text-gray-400">Manager@123</span></div>
-            </div>
-          </div>
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">

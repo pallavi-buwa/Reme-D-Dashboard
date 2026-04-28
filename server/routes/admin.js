@@ -7,6 +7,14 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
+// ── Password strength validator ───────────────────────────────────────────────
+function validatePassword(pw) {
+  if (!pw || pw.length < 8) return 'Password must be at least 8 characters';
+  if (!/[A-Z]/.test(pw))    return 'Password must contain at least one uppercase letter';
+  if (!/[0-9]/.test(pw))    return 'Password must contain at least one number';
+  return null; // valid
+}
+
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 router.get('/users', requireRole('admin'), (req, res) => {
@@ -17,15 +25,21 @@ router.get('/users', requireRole('admin'), (req, res) => {
 router.post('/users', requireRole('admin'), (req, res) => {
   const { name, email, password, role, region, team_id } = req.body;
   if (!name || !email || !password || !role) return res.status(400).json({ error: 'Missing fields' });
+  const pwError = validatePassword(password);
+  if (pwError) return res.status(400).json({ error: pwError });
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
   if (existing) return res.status(409).json({ error: 'Email already exists' });
   const id = uuidv4();
-  db.prepare('INSERT INTO users (id, name, email, password_hash, role, region, team_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, name, email.toLowerCase(), bcrypt.hashSync(password, 10), role, region || null, team_id || null);
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role, region, team_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, name, email.toLowerCase(), bcrypt.hashSync(password, 12), role, region || null, team_id || null);
   res.json({ id });
 });
 
 router.patch('/users/:id', requireRole('admin'), (req, res) => {
   const { name, role, region, active, password, team_id } = req.body;
+  if (password) {
+    const pwError = validatePassword(password);
+    if (pwError) return res.status(400).json({ error: pwError });
+  }
   const updates = [];
   const params = [];
   if (name)             { updates.push('name = ?');          params.push(name); }
@@ -33,7 +47,7 @@ router.patch('/users/:id', requireRole('admin'), (req, res) => {
   if (region !== undefined)  { updates.push('region = ?');   params.push(region || null); }
   if (team_id !== undefined) { updates.push('team_id = ?');  params.push(team_id || null); }
   if (active !== undefined)  { updates.push('active = ?');   params.push(active ? 1 : 0); }
-  if (password)              { updates.push('password_hash = ?'); params.push(bcrypt.hashSync(password, 10)); }
+  if (password)              { updates.push('password_hash = ?'); params.push(bcrypt.hashSync(password, 12)); }
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
   params.push(req.params.id);
   db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
