@@ -469,104 +469,162 @@ function TeamsTab() {
   const { t } = useLanguage()
   const [teams, setTeams] = useState([])
   const [users, setUsers] = useState([])
-  const [modal, setModal] = useState(null) // null | 'create' | team-obj
-  const [form, setForm] = useState({ name: '' })
+  const [modal, setModal] = useState(null) // null | 'create' | team-obj (rename) | {type:'addMember',team} | {type:'setManager',team}
+  const [form, setForm] = useState({ name: '', managerId: '', memberIds: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const assignableUsers = users.filter(u => u.active && ['manager','technical_specialist'].includes(u.role))
+
   function reload() {
-    teamsApi.getTeams().then(r => setTeams(r.data))
-    adminApi.getUsers().then(r => setUsers(r.data))
+    Promise.all([teamsApi.getTeams(), adminApi.getUsers()]).then(([tr, ur]) => {
+      setTeams(tr.data); setUsers(ur.data)
+    })
   }
   useEffect(() => { reload() }, [])
 
-  async function handleSave() {
+  function openCreate() {
+    setForm({ name: '', managerId: '', memberIds: [] })
+    setModal('create'); setError('')
+  }
+  function openRename(team) {
+    setForm({ name: team.name, managerId: '', memberIds: [] })
+    setModal({ type: 'rename', team }); setError('')
+  }
+
+  async function handleCreate() {
     setSaving(true); setError('')
     try {
-      if (modal === 'create') await teamsApi.createTeam({ name: form.name })
-      else await teamsApi.updateTeam(modal.id, { name: form.name })
+      const { data } = await teamsApi.createTeam({ name: form.name.trim() })
+      const teamId = data.id
+      // Assign manager
+      if (form.managerId) await adminApi.updateUser(form.managerId, { team_id: teamId, role: 'manager' })
+      // Assign members
+      for (const uid of form.memberIds) {
+        if (uid !== form.managerId) await adminApi.updateUser(uid, { team_id: teamId })
+      }
+      reload(); setModal(null)
+    } catch (e) { setError(e.response?.data?.error || 'Error') } finally { setSaving(false) }
+  }
+
+  async function handleRename() {
+    setSaving(true); setError('')
+    try {
+      await teamsApi.updateTeam(modal.team.id, { name: form.name.trim() })
       reload(); setModal(null)
     } catch (e) { setError(e.response?.data?.error || 'Error') } finally { setSaving(false) }
   }
 
   async function handleDelete(id) {
-    if (!confirm('Delete this team? Members will be unassigned from it.')) return
+    if (!confirm('Delete this team? All members will be unassigned from it.')) return
     await teamsApi.deleteTeam(id); reload()
   }
 
-  async function handleMoveUser(userId, teamId) {
-    await adminApi.updateUser(userId, { team_id: teamId || null }); reload()
+  async function handleSetUser(userId, teamId, role) {
+    await adminApi.updateUser(userId, { team_id: teamId || null, ...(role ? { role } : {}) })
+    reload()
   }
 
-  const unassigned = users.filter(u => !u.team_id && ['manager','technical_specialist'].includes(u.role))
+  async function handleRemoveUser(userId) {
+    await adminApi.updateUser(userId, { team_id: null }); reload()
+  }
+
+  const unassigned = assignableUsers.filter(u => !u.team_id)
 
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-gray-500">{teams.length} team{teams.length !== 1 ? 's' : ''}</p>
-        <button onClick={() => { setForm({ name: '' }); setModal('create'); setError('') }} className="btn-primary text-sm">+ New Team</button>
+        <p className="text-sm text-gray-500">{teams.length} team{teams.length !== 1 ? 's' : ''} · {unassigned.length} unassigned user{unassigned.length !== 1 ? 's' : ''}</p>
+        <button onClick={openCreate} className="btn-primary text-sm">+ Create Team</button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {teams.map(team => (
-          <div key={team.id} className="card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-800">{team.name}</h3>
-              <div className="flex gap-1">
-                <button onClick={() => { setForm({ name: team.name }); setModal(team); setError('') }} className="btn-ghost text-xs">Rename</button>
-                <button onClick={() => handleDelete(team.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Delete</button>
-              </div>
-            </div>
+        {teams.map(team => {
+          // All users currently in this team (from the flat users list)
+          const teamUsers = assignableUsers.filter(u => u.team_id === team.id)
+          const teamManager = teamUsers.find(u => u.role === 'manager')
+          const teamMembers = teamUsers.filter(u => u.role !== 'manager')
+          // Candidates to add — everyone NOT already in this team
+          const addCandidates = assignableUsers.filter(u => u.team_id !== team.id)
 
-            {/* Manager */}
-            <div className="mb-3">
-              <p className="text-xs font-medium text-gray-500 mb-1">Manager</p>
-              {team.manager ? (
-                <div className="flex items-center justify-between bg-remed-red/5 border border-remed-red/20 rounded px-2.5 py-1.5">
-                  <span className="text-sm font-medium text-gray-800">{team.manager.name}</span>
-                  <button onClick={() => handleMoveUser(team.manager.id, null)} className="text-xs text-gray-400 hover:text-red-500">Remove</button>
+          return (
+            <div key={team.id} className="card p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-800 text-base">{team.name}</h3>
+                <div className="flex gap-1">
+                  <button onClick={() => openRename(team)} className="btn-ghost text-xs">Rename</button>
+                  <button onClick={() => handleDelete(team.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Delete</button>
                 </div>
-              ) : <p className="text-xs text-gray-400 italic">No manager assigned</p>}
-            </div>
+              </div>
 
-            {/* Members */}
-            <div>
-              <p className="text-xs font-medium text-gray-500 mb-1">Specialists ({team.members?.length || 0})</p>
-              <div className="space-y-1">
-                {(team.members || []).map(m => (
-                  <div key={m.id} className="flex items-center justify-between bg-gray-50 rounded px-2.5 py-1.5">
-                    <span className="text-sm text-gray-700">{m.name}</span>
-                    <button onClick={() => handleMoveUser(m.id, null)} className="text-xs text-gray-400 hover:text-red-500">Remove</button>
+              {/* Manager */}
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Manager</p>
+                {teamManager ? (
+                  <div className="flex items-center justify-between bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                    <div>
+                      <span className="text-sm font-medium text-gray-800">{teamManager.name}</span>
+                      <span className="text-xs text-gray-400 ml-2">{teamManager.email}</span>
+                    </div>
+                    <button onClick={() => handleRemoveUser(teamManager.id)} className="text-xs text-gray-300 hover:text-red-500 ml-2">✕</button>
                   </div>
-                ))}
-                {/* Add from unassigned */}
-                {unassigned.length > 0 && (
-                  <select
-                    className="input text-xs py-1 mt-1"
-                    defaultValue=""
-                    onChange={e => { if (e.target.value) { handleMoveUser(e.target.value, team.id); e.target.value = '' } }}
-                  >
-                    <option value="" disabled>+ Add member…</option>
-                    {unassigned.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                  </select>
+                ) : (
+                  <div className="border border-dashed border-gray-200 rounded-md px-3 py-2">
+                    <select className="w-full text-xs text-gray-500 bg-transparent border-none outline-none" defaultValue="" onChange={e => { if (e.target.value) handleSetUser(e.target.value, team.id, 'manager') }}>
+                      <option value="" disabled>Select a manager from existing users…</option>
+                      {addCandidates.map(u => <option key={u.id} value={u.id}>{u.name} — {u.role}{u.team_id ? ` (in ${teams.find(t=>t.id===u.team_id)?.name || 'another team'})` : ''}</option>)}
+                    </select>
+                  </div>
                 )}
               </div>
+
+              {/* Members */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Specialists ({teamMembers.length})</p>
+                <div className="space-y-1">
+                  {teamMembers.map(m => (
+                    <div key={m.id} className="flex items-center justify-between bg-gray-50 rounded-md px-3 py-1.5">
+                      <div>
+                        <span className="text-sm text-gray-700">{m.name}</span>
+                        <span className="text-xs text-gray-400 ml-2">{m.email}</span>
+                      </div>
+                      <button onClick={() => handleRemoveUser(m.id)} className="text-xs text-gray-300 hover:text-red-500 ml-2">✕</button>
+                    </div>
+                  ))}
+                  {/* Add member from any user in the system */}
+                  {addCandidates.length > 0 && (
+                    <div className="mt-1 border border-dashed border-gray-200 rounded-md px-3 py-1.5">
+                      <select className="w-full text-xs text-gray-500 bg-transparent border-none outline-none" defaultValue="" onChange={e => { if (e.target.value) { handleSetUser(e.target.value, team.id, null); e.target.value='' } }}>
+                        <option value="" disabled>+ Add member from existing users…</option>
+                        {addCandidates.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role}){u.team_id ? ` — move from ${teams.find(t=>t.id===u.team_id)?.name || '?'}` : ''}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      {/* Unassigned users */}
+      {/* Unassigned users pool */}
       {unassigned.length > 0 && (
         <div className="mt-4 card p-4">
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Unassigned Users</h4>
-          <div className="flex flex-wrap gap-2">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Unassigned Users ({unassigned.length})</h4>
+          <div className="space-y-2">
             {unassigned.map(u => (
-              <div key={u.id} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-1.5 text-sm">
-                <span className="text-gray-700">{u.name}</span>
-                <span className="text-xs text-gray-400">({u.role})</span>
-                <select className="border-none bg-transparent text-xs text-remed-red cursor-pointer" defaultValue="" onChange={e => { if (e.target.value) handleMoveUser(u.id, e.target.value) }}>
-                  <option value="" disabled>Assign →</option>
+              <div key={u.id} className="flex items-center justify-between bg-gray-50 rounded-md px-3 py-2">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">{u.name}</span>
+                  <span className="text-xs text-gray-400 ml-2">{u.email}</span>
+                  <span className="text-xs bg-gray-200 text-gray-500 rounded px-1.5 py-0.5 ml-2">{u.role}</span>
+                </div>
+                <select
+                  className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-600 bg-white focus:outline-none focus:ring-1 focus:ring-remed-red"
+                  defaultValue=""
+                  onChange={e => { if (e.target.value) handleSetUser(u.id, e.target.value, null) }}
+                >
+                  <option value="" disabled>Assign to team →</option>
                   {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
@@ -575,13 +633,60 @@ function TeamsTab() {
         </div>
       )}
 
-      {modal && (
-        <Modal title={modal === 'create' ? 'New Team' : `Rename: ${modal.name}`} onClose={() => setModal(null)}>
+      {/* Create Team Modal */}
+      {modal === 'create' && (
+        <Modal title="Create New Team" onClose={() => setModal(null)}>
+          <div className="space-y-4">
+            <div>
+              <label className="label">Team Name <span className="text-remed-red">*</span></label>
+              <input className="input" placeholder="e.g. Technical Team" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} autoFocus />
+            </div>
+            <div>
+              <label className="label">Manager <span className="text-gray-400 font-normal text-xs">(optional — can assign later)</span></label>
+              <select className="input" value={form.managerId} onChange={e => setForm(f => ({...f, managerId: e.target.value}))}>
+                <option value="">— Select from existing users —</option>
+                {assignableUsers.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role}){u.team_id ? ` — currently in ${teams.find(t=>t.id===u.team_id)?.name || 'another team'}` : ''}
+                  </option>
+                ))}
+              </select>
+              {form.managerId && assignableUsers.find(u=>u.id===form.managerId)?.role !== 'manager' && (
+                <p className="text-xs text-orange-500 mt-1">⚠ This user's role will be updated to <strong>manager</strong></p>
+              )}
+            </div>
+            <div>
+              <label className="label">Initial Members <span className="text-gray-400 font-normal text-xs">(optional — hold Ctrl/⌘ for multiple)</span></label>
+              <select
+                className="input h-28"
+                multiple
+                value={form.memberIds}
+                onChange={e => setForm(f => ({...f, memberIds: Array.from(e.target.selectedOptions, o => o.value)}))}
+              >
+                {assignableUsers.filter(u => u.id !== form.managerId).map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role}){u.team_id ? ` — ${teams.find(t=>t.id===u.team_id)?.name || 'another team'}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleCreate} disabled={saving || !form.name.trim()} className="btn-primary flex-1">{saving ? 'Creating…' : 'Create Team'}</button>
+              <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Rename Modal */}
+      {modal?.type === 'rename' && (
+        <Modal title={`Rename: ${modal.team.name}`} onClose={() => setModal(null)}>
           <div className="space-y-3">
-            <div><label className="label">Team Name</label><input className="input" value={form.name} onChange={e => setForm({ name: e.target.value })} autoFocus /></div>
+            <div><label className="label">New Team Name</label><input className="input" value={form.name} onChange={e => setForm(f=>({...f, name: e.target.value}))} autoFocus /></div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
-              <button onClick={handleSave} disabled={saving || !form.name.trim()} className="btn-primary flex-1">{saving ? 'Saving…' : 'Save'}</button>
+              <button onClick={handleRename} disabled={saving || !form.name.trim()} className="btn-primary flex-1">{saving ? 'Saving…' : 'Rename'}</button>
               <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
             </div>
           </div>

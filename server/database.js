@@ -247,6 +247,12 @@ function initDatabase() {
 
   const slaCount = get('SELECT COUNT(*) as c FROM sla_configs');
   if (slaCount.c === 0) seedSlaDefaults();
+
+  // Ensure at least 60 realistic complaints exist for demo/client use
+  const complaintCount = get('SELECT COUNT(*) as c FROM complaints').c;
+  if (complaintCount < 60) {
+    try { seedProductionData({ minTargetComplaints: 60, seed: 99 }); } catch (e) { console.warn('Bulk seed error:', e.message); }
+  }
 }
 
 function getNextTicketId() {
@@ -298,27 +304,28 @@ function seedTeams() {
 }
 
 function syncRoutingRules() {
-  // Reset routing rules if any still reference old team/role names
-  const stale = get(`SELECT id FROM routing_rules WHERE
+  // Reset routing rules if any still reference old team/role names OR device-based overrides
+  const staleOldTeam = get(`SELECT id FROM routing_rules WHERE
     assign_team NOT IN ('Technical Team','Sales Team') AND assign_team IS NOT NULL
     OR assign_role = 'account_manager'`);
-  if (!stale) return;
+  // Also reset if old 7-rule set exists (device-based rules caused "Other" to route incorrectly)
+  const totalRules = get('SELECT COUNT(*) as c FROM routing_rules').c;
+  if (!staleOldTeam && totalRules === 5) return; // Already using clean 5-rule set
 
   run('DELETE FROM routing_rules');
+  // Category-only routing — no device-based rules that could override category rules
   const rules = [
     { name: 'Machine/Device Failure → Technical Team', cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'A: Machine'}] }, team:'Technical Team', idx:1 },
     { name: 'Kit/Reagent Issue → Technical Team',       cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'B: Kit/Reagent'}] }, team:'Technical Team', idx:2 },
     { name: 'Assay/Protocol Issue → Technical Team',    cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'C: Assay/Protocol'}] }, team:'Technical Team', idx:3 },
     { name: 'Environmental → Technical Team',           cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'D: Environmental'}] }, team:'Technical Team', idx:4 },
-    { name: 'PCR Device → Technical Team',              cond: { operator:'OR',  conditions:[{field:'device',op:'eq',value:'PseeR 16'},{field:'device',op:'eq',value:'PseeR 32'},{field:'device',op:'eq',value:'Portable PCR mini'}] }, team:'Technical Team', idx:5 },
-    { name: 'Extractor → Technical Team',               cond: { operator:'AND', conditions:[{field:'device',op:'eq',value:'Extractor'}] }, team:'Technical Team', idx:6 },
-    { name: 'Other → Sales Team',                       cond: { operator:'AND', conditions:[{field:'category',op:'eq',value:'Other'}] }, team:'Sales Team', idx:7 },
+    { name: 'Other/General → Sales Team',               cond: { operator:'AND', conditions:[{field:'category',op:'eq',value:'Other'}] }, team:'Sales Team', idx:5 },
   ];
   for (const r of rules) {
     run('INSERT INTO routing_rules (name, conditions, assign_team, assign_role, escalate, order_index) VALUES (?,?,?,?,?,?)',
       r.name, JSON.stringify(r.cond), r.team, null, 0, r.idx);
   }
-  console.log('  Routing rules synced to team-based structure (no escalation flag).');
+  console.log('  Routing rules synced: 5 category-based rules (A-D → Technical, Other → Sales).');
 }
 
 function seedData() {
@@ -477,10 +484,10 @@ function seedProductionData(options = {}) {
 
   const rng = mulberry32((seed ^ (current + 1)) >>> 0);
 
-  const users = all('SELECT id, name, role, region, active FROM users WHERE active = 1');
-  const techUsers = users.filter(u => u.role === 'technical_specialist');
-  const managerUsers = users.filter(u => u.role === 'account_manager');
-  const adminUsers = users.filter(u => u.role === 'admin');
+  const users = all('SELECT id, name, role, region, team_id, active FROM users WHERE active = 1');
+  const techUsers    = users.filter(u => u.role === 'technical_specialist');
+  const managerUsers = users.filter(u => u.role === 'manager');
+  const adminUsers   = users.filter(u => u.role === 'admin');
 
   const priorityRules = all('SELECT * FROM priority_rules');
   const routingRules = all('SELECT * FROM routing_rules');
@@ -489,14 +496,29 @@ function seedProductionData(options = {}) {
   const { extractSignals } = require('./engines/signals');
 
   const regions = ['Cairo', 'Giza', 'Alexandria', 'Tanta', 'Mansoura', 'Aswan', 'Luxor', 'Suez', 'Ismailia', 'Port Said', 'Riyadh', 'Dubai', 'Nairobi', 'Lagos'];
-  const labTypes = ['Hospital', 'Private Lab', 'Blood Bank', 'Clinic', 'Research Institute'];
-  const devices = ['PseeR 16', 'PseeR 32', 'Portable PCR', 'Extractor'];
-  const sampleTypes = ['Nasopharyngeal Swab', 'Blood', 'Saliva', 'Urine', 'Serum', 'Plasma'];
-  const categories = ['Device Failure', 'Reagent Issue', 'Protocol Issue', 'Environmental'];
-  const issueTypes = ['No amplification', 'IC failure', 'Low RFU', 'Abnormal curve', 'High background', 'Late Ct', 'Contamination suspected', 'Extraction failure'];
-  const issueConsistency = ['Single sample', 'Multiple samples', 'All samples'];
-  const deviceStatuses = ['Not working', 'Partially functional', 'Fully functional'];
-  const processingTimes = ['<1h', '2-6h', '6-24h', '>24h'];
+  const labTypes = ['Hospital', 'Private Laboratory', 'Blood Bank', 'Research Laboratory', 'Reference Laboratory'];
+  const devices = ['PseeR 16', 'PseeR 32', 'Portable PCR mini', 'Extractor'];
+  const sampleTypes = ['Nasopharyngeal Swab', 'Blood (Whole Plasma/Serum)', 'Urine', 'Tissue'];
+  // Category pool — weighted so ~15% go to "Other" (routed to Sales Team) and ~85% to A–D (Technical Team)
+  const categoryPool = [
+    ['A: Machine/Device Failure (e.g., error codes, heating cooling failure, power issues)',       22],
+    ['B: Kit/Reagent Issue (e.g., failed controls, unexpected results, storage-expiry concerns)',  22],
+    ['C: Assay/Protocol Issue (e.g., extraction failure, internal control failure, low efficiency)', 22],
+    ['D: Environmental Conditions/External Factor (e.g., power cut, ambient temperature fluctuation)', 19],
+    ['Other', 15],
+  ];
+  const issueTypePool = [
+    'No amplification curve or visible (Flat line)',
+    'Late CT values (Significantly higher than expected)',
+    'Abnormal curve shape (e.g., lagged, double peak)',
+    'Internal Control (IC) failure/Not detected',
+    'Unexpected amplification in the Negative Control (NC)',
+    'Low signal intensity/Low RFU values',
+    'Specific error message displayed on the device (Please detail below)',
+  ];
+  const issueConsistency = ['Only 1 sample', 'Only specific samples (multiple)', 'Consistent across all samples'];
+  const deviceStatuses = ['Not working/Completely non-functional', 'Partially functional (major features failing)', 'Functional with minor features failing', 'Fully functional'];
+  const processingTimes = ['Within 1 hour', '2 - 6 hours', '6 - 24 hours', '24 - 72 hours'];
 
   function randomCreatedAt() {
     const daysBack = randInt(rng, 0, 365);
@@ -531,12 +553,16 @@ function seedProductionData(options = {}) {
     return { name, contact_number: contactForName(name) };
   }
 
-  function chooseAssignedUser(role, region) {
-    if (role === 'technical_specialist' && techUsers.length) return pick(rng, techUsers).id;
-    if (role === 'account_manager' && managerUsers.length) {
-      const regionMatch = managerUsers.find(u => u.region && region && String(region).includes(u.region));
-      return (regionMatch || pick(rng, managerUsers)).id;
+  function chooseAssignedUser(teamId) {
+    // Pick a specialist from the same team; fall back to any specialist or manager
+    if (teamId) {
+      const teamMembers = techUsers.filter(u => u.team_id === teamId);
+      if (teamMembers.length) return pick(rng, teamMembers).id;
+      const mgr = managerUsers.find(u => u.team_id === teamId);
+      if (mgr) return mgr.id;
     }
+    if (techUsers.length) return pick(rng, techUsers).id;
+    if (managerUsers.length) return pick(rng, managerUsers).id;
     if (adminUsers.length) return pick(rng, adminUsers).id;
     return null;
   }
@@ -552,14 +578,14 @@ function seedProductionData(options = {}) {
 
       const lab_type = pick(rng, labTypes);
       const device = pick(rng, devices);
-      const category = pick(rng, categories);
+      const category = weightedPick(rng, categoryPool);
       const region = rng() < 0.2 ? null : pick(rng, regions);
 
       const reporter = makeReporter();
       const sample_type = pick(rng, sampleTypes);
       const extraction_type = pick(rng, ['Automatic', 'Manual']);
 
-      const selectedIssueTypes = pickMany(rng, issueTypes, randInt(rng, 1, 3));
+      const selectedIssueTypes = pickMany(rng, issueTypePool, randInt(rng, 1, 3));
       const consistency = weightedPick(rng, [[issueConsistency[0], 30], [issueConsistency[1], 45], [issueConsistency[2], 25]]);
       const device_status = weightedPick(rng, [[deviceStatuses[0], 20], [deviceStatuses[1], 35], [deviceStatuses[2], 45]]);
       const power_issue = rng() < 0.15 ? 'Yes' : 'No';
@@ -581,37 +607,43 @@ function seedProductionData(options = {}) {
           issue_consistency: consistency,
           run_datetime: new Date(createdAt.getTime() - randInt(rng, 0, 6) * 60 * 60 * 1000).toISOString().slice(0, 16),
           fam_curve_visible: rng() < 0.75 ? 'Yes' : 'No',
-          low_rfu: selectedIssueTypes.includes('Low RFU') ? 'Yes' : (rng() < 0.25 ? 'Yes' : 'No'),
+          low_rfu: selectedIssueTypes.some(t => t.includes('Low RFU') || t.includes('Low signal')) ? 'Yes' : (rng() < 0.25 ? 'Yes' : 'No'),
         },
         'Issue Categorization & Severity': {
           category,
-          user_priority: weightedPick(rng, [['P1 Critical', 10], ['P2 High', 35], ['P3 Medium', 55]]),
+          user_priority: weightedPick(rng, [['P1: Critical - Device/System is completely non-operational (System Down/Total Failure)', 10], ['P2: High - System is partially working or output is unreliable/inaccurate (Major impact on operations)', 35], ['P3: Medium - Minor intermittent issues or general feedback (Minimal impact on operations)', 55]]),
           device_status,
           power_issue,
         },
-        'Controls & Standards': {
+        'Controls & Standards Assessment': {
           efficiency: String(randInt(rng, 65, 98)),
           r_squared: (0.97 + rng() * 0.03).toFixed(3),
           slope: (-3.9 + rng() * 0.9).toFixed(2),
-          ic_valid: selectedIssueTypes.includes('IC failure') ? 'No' : (rng() < 0.85 ? 'Yes' : 'No'),
-          ct_value: weightedPick(rng, [['<26', 45], ['>26', 55]]),
+          ic_amplified: selectedIssueTypes.some(t => t.includes('IC') || t.includes('Internal Control')) ? 'No' : (rng() < 0.85 ? 'Yes' : 'No'),
+          ct_value: weightedPick(rng, [['<26 - Acceptable', 45], ['>26 - Not Acceptable', 55]]),
+          positive_control_run: rng() < 0.7 ? 'Yes' : 'No',
+          positive_control_amplified: rng() < 0.85 ? 'Yes' : 'No',
+          positive_control_consistency: pick(rng, ['All samples', 'Few samples', 'No sample']),
+          negative_control_run: rng() < 0.7 ? 'Yes' : 'No',
+          negative_control_amplified: rng() < 0.15 ? 'Yes' : 'No',
+          negative_control_consistency: pick(rng, ['All samples', 'Few samples', 'No sample']),
         },
-        'Device Details': {
+        'Device & System Details': {
           device,
           model_number: `${device.replace(/\s+/g, '-').toUpperCase()}-${randInt(rng, 2020, 2026)}`,
           serial_number: `SN-${randInt(rng, 100, 999)}-${randInt(rng, 10, 99)}`,
         },
-        'Reagent Check': {
+        'Reagent & Control Check': {
           reagent_storage,
           reagent_expiry,
           protocol_changes: rng() < 0.2 ? 'Yes' : 'No',
         },
-        'Additional Info': {
+        'Extra Information': {
           description: weightedPick(rng, [
-            ['Issue observed during routine run; operator requests guidance and troubleshooting steps.', 35],
-            ['Intermittent failures observed; requesting remote support and recommended checks.', 30],
-            ['Multiple samples affected; lab operations impacted; needs quick resolution.', 25],
-            ['Customer reports consistent failure after recent maintenance; requesting escalation.', 10],
+            ['Issue observed during routine run. Operator requests guidance and troubleshooting steps. No prior occurrence of this failure noted.', 35],
+            ['Intermittent failures observed across multiple runs. Requesting remote support and recommended corrective checks.', 30],
+            ['Multiple samples affected. Lab operations impacted. Urgently needs resolution to resume diagnostic capacity.', 25],
+            ['Consistent failure after recent reagent lot change. Steps taken: re-extraction, repeat run. Issue persists.', 10],
           ]),
         },
       };
@@ -624,9 +656,11 @@ function seedProductionData(options = {}) {
       const primaryAssignment = routing.find(a => a.team) || null;
 
       const assigned_team = primaryAssignment?.team ?? null;
-      const assigned_role = primaryAssignment?.role ?? null;
-      const escalated = routing.some(a => a.escalate) ? 1 : 0;
-      const assigned_to = (assigned_role && rng() < 0.85) ? chooseAssignedUser(assigned_role, region) : null;
+      const escalated = 0; // Escalation is SLA-driven, not routing-driven
+      // Find the team record to get its id
+      const teamRecord = assigned_team ? get('SELECT id FROM teams WHERE name = ?', assigned_team) : null;
+      const assigned_team_id = teamRecord?.id ?? null;
+      const assigned_to = (assigned_team_id && rng() < 0.85) ? chooseAssignedUser(assigned_team_id) : null;
 
       const status = statusForAgeDays(ageDays);
 
@@ -636,9 +670,9 @@ function seedProductionData(options = {}) {
       const updatedSql = toSqliteDate(updatedAt);
 
       run(
-        'INSERT INTO complaints (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,category,device,lab_type,region,assigned_to,assigned_team,submitted_by_name,submitted_by_contact,escalated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO complaints (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,category,device,lab_type,region,assigned_to,assigned_team,assigned_team_id,submitted_by_name,submitted_by_contact,escalated,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         id, ticketId, status, pr.priority, pr.reasoning, pr.rule_name,
-        category, device, lab_type, region, assigned_to, assigned_team,
+        category, device, lab_type, region, assigned_to, assigned_team, assigned_team_id,
         reporter.name, reporter.contact_number, escalated, createdSql, updatedSql
       );
 
