@@ -55,6 +55,13 @@ export const adminApi = {
   updateSlaConfig: (priority, data) => api.patch(`/admin/sla-configs/${priority}`, data),
 }
 
+export const teamsApi = {
+  getTeams: () => api.get('/admin/teams'),
+  createTeam: (data) => api.post('/admin/teams', data),
+  updateTeam: (id, data) => api.patch(`/admin/teams/${id}`, data),
+  deleteTeam: (id) => api.delete(`/admin/teams/${id}`),
+}
+
 export const analyticsApi = {
   summary: () => api.get('/analytics/summary'),
 }

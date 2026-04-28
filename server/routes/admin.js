@@ -10,29 +10,30 @@ router.use(authMiddleware);
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 router.get('/users', requireRole('admin'), (req, res) => {
-  const users = db.prepare('SELECT id, name, email, role, region, active, created_at FROM users ORDER BY created_at DESC').all();
+  const users = db.prepare('SELECT id, name, email, role, region, team_id, active, created_at FROM users ORDER BY name ASC').all();
   res.json(users);
 });
 
 router.post('/users', requireRole('admin'), (req, res) => {
-  const { name, email, password, role, region } = req.body;
+  const { name, email, password, role, region, team_id } = req.body;
   if (!name || !email || !password || !role) return res.status(400).json({ error: 'Missing fields' });
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
   if (existing) return res.status(409).json({ error: 'Email already exists' });
   const id = uuidv4();
-  db.prepare('INSERT INTO users (id, name, email, password_hash, role, region) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, email.toLowerCase(), bcrypt.hashSync(password, 10), role, region || null);
+  db.prepare('INSERT INTO users (id, name, email, password_hash, role, region, team_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, name, email.toLowerCase(), bcrypt.hashSync(password, 10), role, region || null, team_id || null);
   res.json({ id });
 });
 
 router.patch('/users/:id', requireRole('admin'), (req, res) => {
-  const { name, role, region, active, password } = req.body;
+  const { name, role, region, active, password, team_id } = req.body;
   const updates = [];
   const params = [];
-  if (name) { updates.push('name = ?'); params.push(name); }
-  if (role) { updates.push('role = ?'); params.push(role); }
-  if (region !== undefined) { updates.push('region = ?'); params.push(region || null); }
-  if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
-  if (password) { updates.push('password_hash = ?'); params.push(bcrypt.hashSync(password, 10)); }
+  if (name)             { updates.push('name = ?');          params.push(name); }
+  if (role)             { updates.push('role = ?');          params.push(role); }
+  if (region !== undefined)  { updates.push('region = ?');   params.push(region || null); }
+  if (team_id !== undefined) { updates.push('team_id = ?');  params.push(team_id || null); }
+  if (active !== undefined)  { updates.push('active = ?');   params.push(active ? 1 : 0); }
+  if (password)              { updates.push('password_hash = ?'); params.push(bcrypt.hashSync(password, 10)); }
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
   params.push(req.params.id);
   db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
@@ -143,6 +144,41 @@ router.patch('/sla-configs/:priority', requireRole('admin'), (req, res) => {
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   params.push(priority);
   db.prepare(`UPDATE sla_configs SET ${updates.join(', ')} WHERE priority = ?`).run(...params);
+  res.json({ ok: true });
+});
+
+// ── Teams ─────────────────────────────────────────────────────────────────────
+
+router.get('/teams', (req, res) => {
+  const teams = db.prepare('SELECT * FROM teams ORDER BY name ASC').all();
+  const users = db.prepare('SELECT id, name, email, role, team_id, active FROM users WHERE active = 1 ORDER BY name ASC').all();
+  res.json(teams.map(t => ({
+    ...t,
+    manager: users.find(u => u.team_id === t.id && u.role === 'manager') || null,
+    members: users.filter(u => u.team_id === t.id && u.role !== 'manager'),
+  })));
+});
+
+router.post('/teams', requireRole('admin'), (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Team name required' });
+  const existing = db.prepare('SELECT id FROM teams WHERE name = ?').get(name.trim());
+  if (existing) return res.status(409).json({ error: 'Team name already exists' });
+  const id = uuidv4();
+  db.prepare('INSERT INTO teams (id, name) VALUES (?, ?)').run(id, name.trim());
+  res.json({ id });
+});
+
+router.patch('/teams/:id', requireRole('admin'), (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Team name required' });
+  db.prepare('UPDATE teams SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+  res.json({ ok: true });
+});
+
+router.delete('/teams/:id', requireRole('admin'), (req, res) => {
+  db.prepare('UPDATE users SET team_id = NULL WHERE team_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM teams WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

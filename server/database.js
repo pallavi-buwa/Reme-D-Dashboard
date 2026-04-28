@@ -84,6 +84,12 @@ function weightedPick(rng, items) {
 
 function initDatabase() {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS teams (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -91,6 +97,7 @@ function initDatabase() {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'viewer',
       region TEXT,
+      team_id TEXT,
       active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -108,6 +115,7 @@ function initDatabase() {
       region TEXT,
       assigned_to TEXT,
       assigned_team TEXT,
+      assigned_team_id TEXT,
       submitted_by_name TEXT,
       submitted_by_contact TEXT,
       submitted_by_email TEXT,
@@ -205,8 +213,13 @@ function initDatabase() {
     );
   `);
 
-  // Migration: add submitted_by_email column if it doesn't exist yet
-  try { db.exec('ALTER TABLE complaints ADD COLUMN submitted_by_email TEXT'); } catch { /* already exists */ }
+  // Column migrations
+  try { db.exec('ALTER TABLE complaints ADD COLUMN submitted_by_email TEXT'); } catch { /* exists */ }
+  try { db.exec('ALTER TABLE complaints ADD COLUMN assigned_team_id TEXT'); } catch { /* exists */ }
+  try { db.exec('ALTER TABLE users ADD COLUMN team_id TEXT'); } catch { /* exists */ }
+
+  // Deactivate removed role
+  db.exec("UPDATE users SET active = 0 WHERE role = 'account_manager'");
 
   // Migration: purge all "Waiting on Customer" complaints (status removed from workflow)
   const wocIds = all("SELECT id FROM complaints WHERE status = 'Waiting on Customer'").map(r => r.id);
@@ -225,6 +238,13 @@ function initDatabase() {
   const userCount = get('SELECT COUNT(*) as c FROM users');
   if (userCount.c === 0) seedData();
 
+  // Team migration — runs on every startup; safe to call multiple times
+  const teamCount = get('SELECT COUNT(*) as c FROM teams');
+  if (teamCount.c === 0) seedTeams();
+
+  // Routing rules migration — reset if they still reference old team names
+  syncRoutingRules();
+
   const slaCount = get('SELECT COUNT(*) as c FROM sla_configs');
   if (slaCount.c === 0) seedSlaDefaults();
 }
@@ -237,18 +257,83 @@ function getNextTicketId() {
   return `RMD-${year}-${String(counter).padStart(4, '0')}`;
 }
 
+function seedTeams() {
+  const techId = uuidv4();
+  const salesId = uuidv4();
+  run('INSERT INTO teams (id, name) VALUES (?, ?)', techId, 'Technical Team');
+  run('INSERT INTO teams (id, name) VALUES (?, ?)', salesId, 'Sales Team');
+
+  const teamUsers = [
+    { name: 'Dr. Salma',  email: 'salma@remed.com',   password: 'Salma@123',   role: 'manager',              team_id: techId },
+    { name: 'Armaan',     email: 'armaan@remed.com',   password: 'Armaan@123',  role: 'technical_specialist', team_id: techId },
+    { name: 'Mustafa',    email: 'mustafa@remed.com',  password: 'Mustafa@123', role: 'technical_specialist', team_id: techId },
+    { name: 'Dr. Mai',    email: 'mai@remed.com',      password: 'Mai@123',     role: 'manager',              team_id: salesId },
+    { name: 'Ziad',       email: 'ziad@remed.com',     password: 'Ziad@123',    role: 'technical_specialist', team_id: salesId },
+    { name: 'Daanish',    email: 'daanish@remed.com',  password: 'Daanish@123', role: 'technical_specialist', team_id: salesId },
+  ];
+
+  for (const u of teamUsers) {
+    const exists = get('SELECT id FROM users WHERE email = ?', u.email);
+    if (exists) {
+      run('UPDATE users SET name = ?, role = ?, team_id = ?, active = 1 WHERE email = ?', u.name, u.role, u.team_id, u.email);
+    } else {
+      run('INSERT INTO users (id, name, email, password_hash, role, team_id) VALUES (?, ?, ?, ?, ?, ?)',
+        uuidv4(), u.name, u.email, bcrypt.hashSync(u.password, 10), u.role, u.team_id);
+    }
+  }
+
+  // Ensure admin + viewer exist for any install type
+  for (const u of [
+    { name: 'Admin User', email: 'admin@remed.com', password: 'Admin@123', role: 'admin', team_id: null },
+    { name: 'Viewer User', email: 'viewer@remed.com', password: 'View@123', role: 'viewer', team_id: null },
+  ]) {
+    const exists = get('SELECT id FROM users WHERE email = ?', u.email);
+    if (!exists) {
+      run('INSERT INTO users (id, name, email, password_hash, role, team_id) VALUES (?, ?, ?, ?, ?, ?)',
+        uuidv4(), u.name, u.email, bcrypt.hashSync(u.password, 10), u.role, u.team_id);
+    }
+  }
+
+  console.log('  Teams seeded: Technical Team (Dr. Salma, Armaan, Mustafa) | Sales Team (Dr. Mai, Ziad, Daanish)');
+}
+
+function syncRoutingRules() {
+  // Reset routing rules if any still reference old team/role names
+  const stale = get(`SELECT id FROM routing_rules WHERE
+    assign_team NOT IN ('Technical Team','Sales Team') AND assign_team IS NOT NULL
+    OR assign_role = 'account_manager'`);
+  if (!stale) return;
+
+  run('DELETE FROM routing_rules');
+  const rules = [
+    { name: 'Machine/Device Failure → Technical Team', cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'A: Machine'}] }, team:'Technical Team', idx:1 },
+    { name: 'Kit/Reagent Issue → Technical Team',       cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'B: Kit/Reagent'}] }, team:'Technical Team', idx:2 },
+    { name: 'Assay/Protocol Issue → Technical Team',    cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'C: Assay/Protocol'}] }, team:'Technical Team', idx:3 },
+    { name: 'Environmental → Technical Team',           cond: { operator:'AND', conditions:[{field:'category',op:'contains',value:'D: Environmental'}] }, team:'Technical Team', idx:4 },
+    { name: 'PCR Device → Technical Team',              cond: { operator:'OR',  conditions:[{field:'device',op:'eq',value:'PseeR 16'},{field:'device',op:'eq',value:'PseeR 32'},{field:'device',op:'eq',value:'Portable PCR mini'}] }, team:'Technical Team', idx:5 },
+    { name: 'Extractor → Technical Team',               cond: { operator:'AND', conditions:[{field:'device',op:'eq',value:'Extractor'}] }, team:'Technical Team', idx:6 },
+    { name: 'Other → Sales Team',                       cond: { operator:'AND', conditions:[{field:'category',op:'eq',value:'Other'}] }, team:'Sales Team', idx:7 },
+  ];
+  for (const r of rules) {
+    run('INSERT INTO routing_rules (name, conditions, assign_team, assign_role, escalate, order_index) VALUES (?,?,?,?,?,?)',
+      r.name, JSON.stringify(r.cond), r.team, null, 0, r.idx);
+  }
+  console.log('  Routing rules synced to team-based structure (no escalation flag).');
+}
+
 function seedData() {
+  // Teams are seeded separately in seedTeams() — called after seedData()
+  // Seed placeholder admin + viewer so priority rules can be created
+  const adminId = uuidv4();
+  const viewerId = uuidv4();
   const users = [
-    { id: uuidv4(), name: 'Admin User', email: 'admin@remed.com', password: 'Admin@123', role: 'admin', region: null },
-    { id: uuidv4(), name: 'Tech Specialist', email: 'specialist@remed.com', password: 'Spec@123', role: 'technical_specialist', region: null },
-    { id: uuidv4(), name: 'Account Manager', email: 'manager@remed.com', password: 'Manager@123', role: 'account_manager', region: null },
-    { id: uuidv4(), name: 'Egypt Account Manager', email: 'egypt@remed.com', password: 'Egypt@123', role: 'account_manager', region: 'Egypt' },
-    { id: uuidv4(), name: 'Viewer User', email: 'viewer@remed.com', password: 'View@123', role: 'viewer', region: null },
+    { id: adminId, name: 'Admin User', email: 'admin@remed.com', password: 'Admin@123', role: 'admin', team_id: null },
+    { id: viewerId, name: 'Viewer User', email: 'viewer@remed.com', password: 'View@123', role: 'viewer', team_id: null },
   ];
 
   for (const u of users) {
-    run('INSERT INTO users (id, name, email, password_hash, role, region) VALUES (?, ?, ?, ?, ?, ?)',
-      u.id, u.name, u.email, bcrypt.hashSync(u.password, 10), u.role, u.region);
+    run('INSERT INTO users (id, name, email, password_hash, role, team_id) VALUES (?, ?, ?, ?, ?, ?)',
+      u.id, u.name, u.email, bcrypt.hashSync(u.password, 10), u.role, u.team_id);
   }
 
   const priorityRules = [

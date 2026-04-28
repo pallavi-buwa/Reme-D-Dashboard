@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { adminApi } from '../api'
+import { adminApi, teamsApi } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import Layout from '../components/Layout'
 import { useNavigate } from 'react-router-dom'
 
-const ROLES = ['admin', 'technical_specialist', 'account_manager', 'viewer']
+const ROLES = ['admin', 'manager', 'technical_specialist', 'viewer']
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3']
 const PRIORITY_COLORS = { P0: 'bg-black text-white', P1: 'bg-red-600 text-white', P2: 'bg-orange-100 text-orange-800', P3: 'bg-blue-100 text-blue-700' }
 
@@ -330,10 +330,6 @@ function RoutingRulesTab() {
             </div>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={form.escalate} onChange={e => setForm(p => ({ ...p, escalate: e.target.checked }))} />
-                {t('triggersEscalation')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} />
                 {t('labelActive')}
               </label>
@@ -468,12 +464,139 @@ function SlaTab() {
   )
 }
 
+// ─── Teams Tab ────────────────────────────────────────────────────────────────
+function TeamsTab() {
+  const { t } = useLanguage()
+  const [teams, setTeams] = useState([])
+  const [users, setUsers] = useState([])
+  const [modal, setModal] = useState(null) // null | 'create' | team-obj
+  const [form, setForm] = useState({ name: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function reload() {
+    teamsApi.getTeams().then(r => setTeams(r.data))
+    adminApi.getUsers().then(r => setUsers(r.data))
+  }
+  useEffect(() => { reload() }, [])
+
+  async function handleSave() {
+    setSaving(true); setError('')
+    try {
+      if (modal === 'create') await teamsApi.createTeam({ name: form.name })
+      else await teamsApi.updateTeam(modal.id, { name: form.name })
+      reload(); setModal(null)
+    } catch (e) { setError(e.response?.data?.error || 'Error') } finally { setSaving(false) }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('Delete this team? Members will be unassigned from it.')) return
+    await teamsApi.deleteTeam(id); reload()
+  }
+
+  async function handleMoveUser(userId, teamId) {
+    await adminApi.updateUser(userId, { team_id: teamId || null }); reload()
+  }
+
+  const unassigned = users.filter(u => !u.team_id && ['manager','technical_specialist'].includes(u.role))
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-gray-500">{teams.length} team{teams.length !== 1 ? 's' : ''}</p>
+        <button onClick={() => { setForm({ name: '' }); setModal('create'); setError('') }} className="btn-primary text-sm">+ New Team</button>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {teams.map(team => (
+          <div key={team.id} className="card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-800">{team.name}</h3>
+              <div className="flex gap-1">
+                <button onClick={() => { setForm({ name: team.name }); setModal(team); setError('') }} className="btn-ghost text-xs">Rename</button>
+                <button onClick={() => handleDelete(team.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1">Delete</button>
+              </div>
+            </div>
+
+            {/* Manager */}
+            <div className="mb-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">Manager</p>
+              {team.manager ? (
+                <div className="flex items-center justify-between bg-remed-red/5 border border-remed-red/20 rounded px-2.5 py-1.5">
+                  <span className="text-sm font-medium text-gray-800">{team.manager.name}</span>
+                  <button onClick={() => handleMoveUser(team.manager.id, null)} className="text-xs text-gray-400 hover:text-red-500">Remove</button>
+                </div>
+              ) : <p className="text-xs text-gray-400 italic">No manager assigned</p>}
+            </div>
+
+            {/* Members */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1">Specialists ({team.members?.length || 0})</p>
+              <div className="space-y-1">
+                {(team.members || []).map(m => (
+                  <div key={m.id} className="flex items-center justify-between bg-gray-50 rounded px-2.5 py-1.5">
+                    <span className="text-sm text-gray-700">{m.name}</span>
+                    <button onClick={() => handleMoveUser(m.id, null)} className="text-xs text-gray-400 hover:text-red-500">Remove</button>
+                  </div>
+                ))}
+                {/* Add from unassigned */}
+                {unassigned.length > 0 && (
+                  <select
+                    className="input text-xs py-1 mt-1"
+                    defaultValue=""
+                    onChange={e => { if (e.target.value) { handleMoveUser(e.target.value, team.id); e.target.value = '' } }}
+                  >
+                    <option value="" disabled>+ Add member…</option>
+                    {unassigned.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                  </select>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Unassigned users */}
+      {unassigned.length > 0 && (
+        <div className="mt-4 card p-4">
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Unassigned Users</h4>
+          <div className="flex flex-wrap gap-2">
+            {unassigned.map(u => (
+              <div key={u.id} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-1.5 text-sm">
+                <span className="text-gray-700">{u.name}</span>
+                <span className="text-xs text-gray-400">({u.role})</span>
+                <select className="border-none bg-transparent text-xs text-remed-red cursor-pointer" defaultValue="" onChange={e => { if (e.target.value) handleMoveUser(u.id, e.target.value) }}>
+                  <option value="" disabled>Assign →</option>
+                  {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {modal && (
+        <Modal title={modal === 'create' ? 'New Team' : `Rename: ${modal.name}`} onClose={() => setModal(null)}>
+          <div className="space-y-3">
+            <div><label className="label">Team Name</label><input className="input" value={form.name} onChange={e => setForm({ name: e.target.value })} autoFocus /></div>
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleSave} disabled={saving || !form.name.trim()} className="btn-primary flex-1">{saving ? 'Saving…' : 'Save'}</button>
+              <button onClick={() => setModal(null)} className="btn-secondary flex-1">Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Admin Page ──────────────────────────────────────────────────────────
 export default function Admin() {
   const { user } = useAuth()
   const { t } = useLanguage()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('users')
+  const [tab, setTab] = useState('teams')
 
   if (user?.role !== 'admin') {
     navigate('/dashboard')
@@ -488,12 +611,14 @@ export default function Admin() {
       </div>
 
       <div className="flex gap-1 mb-6 bg-white border border-gray-200 rounded-lg p-1 w-fit">
+        <Tab active={tab === 'teams'} onClick={() => setTab('teams')}>Teams</Tab>
         <Tab active={tab === 'users'} onClick={() => setTab('users')}>{t('tabUsers')}</Tab>
         <Tab active={tab === 'priority'} onClick={() => setTab('priority')}>{t('tabPriority')}</Tab>
         <Tab active={tab === 'routing'} onClick={() => setTab('routing')}>{t('tabRouting')}</Tab>
         <Tab active={tab === 'sla'} onClick={() => setTab('sla')}>{t('tabSla')}</Tab>
       </div>
 
+      {tab === 'teams' && <TeamsTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'priority' && <PriorityRulesTab />}
       {tab === 'routing' && <RoutingRulesTab />}

@@ -17,7 +17,55 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// POST /api/complaints — public submission
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getUserTeamId(userId) {
+  const u = db.prepare('SELECT team_id FROM users WHERE id = ?').get(userId);
+  return u?.team_id || null;
+}
+
+function getTeamManager(teamId) {
+  return db.prepare("SELECT id FROM users WHERE team_id = ? AND role = 'manager' AND active = 1 LIMIT 1").get(teamId);
+}
+
+/**
+ * Visibility filter: restricts the complaint query to what the requesting user is
+ * allowed to see based on their role and team membership.
+ *
+ *   admin / viewer → all complaints
+ *   manager        → all complaints assigned to their team
+ *   specialist     → all complaints assigned to their team
+ */
+function visibilityFilter(user) {
+  if (user.role === 'admin' || user.role === 'viewer') return { clause: '', params: [] };
+  const teamId = user.team_id || getUserTeamId(user.id);
+  if (teamId) return { clause: ' AND c.assigned_team_id = ?', params: [teamId] };
+  // No team — fall back to own assignments only
+  return { clause: ' AND c.assigned_to = ?', params: [user.id] };
+}
+
+/**
+ * SLA auto-escalation: if resolution SLA is breached and the complaint is not in a
+ * terminal state, mark it Escalated and reassign to the team manager.
+ */
+function autoEscalate(complaint, slaMap) {
+  if (['Escalated', 'Resolved', 'Closed'].includes(complaint.status)) return null;
+  const sla = computeSla(complaint, slaMap[complaint.priority]);
+  if (!sla?.breached) return null;
+
+  let managerId = complaint.assigned_to;
+  if (complaint.assigned_team_id) {
+    const mgr = getTeamManager(complaint.assigned_team_id);
+    if (mgr) managerId = mgr.id;
+  }
+
+  db.prepare("UPDATE complaints SET status='Escalated', escalated=1, assigned_to=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(managerId, complaint.id);
+  db.prepare("INSERT INTO status_history (complaint_id,from_status,to_status,changed_by,notes) VALUES (?,?,?,?,?)").run(complaint.id, complaint.status, 'Escalated', 'system', 'SLA breached — auto-escalated to team manager');
+
+  return { ...complaint, status: 'Escalated', escalated: 1, assigned_to: managerId };
+}
+
+// ── POST /api/complaints — public form submission ─────────────────────────────
 router.post('/', upload.single('file'), (req, res) => {
   try {
     const sectionsRaw = req.body.sections;
@@ -28,42 +76,57 @@ router.post('/', upload.single('file'), (req, res) => {
 
     const signals = extractSignals(flat);
 
-    const priorityRules = db.prepare('SELECT * FROM priority_rules WHERE active = 1 ORDER BY order_index ASC').all();
+    const priorityRules = db.prepare('SELECT * FROM priority_rules WHERE active=1 ORDER BY order_index ASC').all();
     const priorityResult = evaluatePriority(flat, priorityRules);
 
-    const routingRules = db.prepare('SELECT * FROM routing_rules WHERE active = 1 ORDER BY order_index ASC').all();
+    const routingRules = db.prepare('SELECT * FROM routing_rules WHERE active=1 ORDER BY order_index ASC').all();
     const routingResults = evaluateRouting(flat, priorityResult.priority, routingRules);
 
-    const primaryRoute = routingResults.find(r => !r.escalate);
-    const escalated = routingResults.some(r => r.escalate) ? 1 : 0;
+    // Routing assigns to a TEAM. Default owner = team manager.
+    const primaryRoute = routingResults[0] || null;
+    let assignedTeamId = null;
+    let assignedTeamName = primaryRoute?.team || null;
+    let assignedTo = null;
+
+    if (assignedTeamName) {
+      const team = db.prepare('SELECT id FROM teams WHERE name = ?').get(assignedTeamName);
+      if (team) {
+        assignedTeamId = team.id;
+        const mgr = getTeamManager(team.id);
+        if (mgr) assignedTo = mgr.id;
+      }
+    }
 
     const complaintId = uuidv4();
     const ticketId = getNextTicketId();
 
     db.prepare(`
-      INSERT INTO complaints (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,category,device,lab_type,region,assigned_team,submitted_by_name,submitted_by_contact,submitted_by_email,escalated)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      INSERT INTO complaints
+        (id,ticket_id,status,priority,priority_reasoning,priority_rule_name,
+         category,device,lab_type,region,
+         assigned_team,assigned_team_id,assigned_to,
+         submitted_by_name,submitted_by_contact,submitted_by_email,escalated)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       complaintId, ticketId, 'New',
       priorityResult.priority, priorityResult.reasoning, priorityResult.rule_name,
       flat.category, flat.device, flat.lab_type, flat.region || null,
-      primaryRoute?.team || null,
+      assignedTeamName, assignedTeamId, assignedTo,
       flat.name, flat.contact_number, flat.email || null,
-      escalated
+      0
     );
 
     for (const [sectionName, data] of Object.entries(sections)) {
-      db.prepare('INSERT INTO section_responses (complaint_id, section_name, data) VALUES (?, ?, ?)').run(complaintId, sectionName, JSON.stringify(data));
+      db.prepare('INSERT INTO section_responses (complaint_id,section_name,data) VALUES (?,?,?)').run(complaintId, sectionName, JSON.stringify(data));
     }
+    db.prepare('INSERT INTO derived_signals (complaint_id,signals) VALUES (?,?)').run(complaintId, JSON.stringify(signals));
+    db.prepare("INSERT INTO status_history (complaint_id,from_status,to_status,changed_by,notes) VALUES (?,?,?,?,?)").run(complaintId, null, 'New', 'system', 'Complaint submitted via form');
 
-    db.prepare('INSERT INTO derived_signals (complaint_id, signals) VALUES (?, ?)').run(complaintId, JSON.stringify(signals));
-
-    db.prepare("INSERT INTO status_history (complaint_id, from_status, to_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)").run(complaintId, null, 'New', 'system', 'Complaint submitted via form');
-
+    if (assignedTo) {
+      db.prepare("INSERT INTO assignment_history (complaint_id,assigned_from,assigned_to,team,assigned_by) VALUES (?,?,?,?,?)").run(complaintId, null, assignedTo, assignedTeamName, 'system');
+    }
     if (req.file) {
-      db.prepare('INSERT INTO attachments (complaint_id, filename, original_name, file_path, file_size) VALUES (?, ?, ?, ?, ?)').run(
-        complaintId, req.file.filename, req.file.originalname, req.file.path, req.file.size
-      );
+      db.prepare('INSERT INTO attachments (complaint_id,filename,original_name,file_path,file_size) VALUES (?,?,?,?,?)').run(complaintId, req.file.filename, req.file.originalname, req.file.path, req.file.size);
     }
 
     res.json({
@@ -71,8 +134,8 @@ router.post('/', upload.single('file'), (req, res) => {
       complaint_id: complaintId,
       priority: priorityResult.priority,
       reasoning: priorityResult.reasoning,
-      team: primaryRoute?.team || 'Unassigned',
-      escalated: !!escalated,
+      team: assignedTeamName || 'Unassigned',
+      escalated: false,
     });
   } catch (err) {
     console.error(err);
@@ -80,64 +143,68 @@ router.post('/', upload.single('file'), (req, res) => {
   }
 });
 
-// GET /api/complaints — list with filters (auth required)
+// ── GET /api/complaints — list ────────────────────────────────────────────────
 router.get('/', authMiddleware, (req, res) => {
   const { priority, status, category, device, view, search, from, to } = req.query;
+  const { clause: visClause, params: visParams } = visibilityFilter(req.user);
 
   let q = `
     SELECT c.*, u.name as assigned_name
     FROM complaints c
     LEFT JOIN users u ON c.assigned_to = u.id
-    WHERE 1=1
+    WHERE 1=1${visClause}
   `;
-  const params = [];
+  const params = [...visParams];
 
   if (priority) { q += ' AND c.priority = ?'; params.push(priority); }
-  if (status) { q += ' AND c.status = ?'; params.push(status); }
+  if (status)   { q += ' AND c.status = ?';   params.push(status); }
   if (category) { q += ' AND c.category LIKE ?'; params.push(`%${category}%`); }
-  if (device) { q += ' AND c.device = ?'; params.push(device); }
-  if (from) { q += ' AND date(c.created_at) >= ?'; params.push(from); }
-  if (to) { q += ' AND date(c.created_at) <= ?'; params.push(to); }
-  if (search) {
-    q += ' AND (c.ticket_id LIKE ? OR c.submitted_by_name LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`);
+  if (device)   { q += ' AND c.device = ?';   params.push(device); }
+  if (from)     { q += ' AND date(c.created_at) >= ?'; params.push(from); }
+  if (to)       { q += ' AND date(c.created_at) <= ?'; params.push(to); }
+  if (search)   { q += ' AND (c.ticket_id LIKE ? OR c.submitted_by_name LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+
+  // View-specific filters
+  if (view === 'mine') {
+    q += ' AND c.assigned_to = ?'; params.push(req.user.id);
+  } else if (view === 'unassigned') {
+    if (!['admin', 'manager'].includes(req.user.role)) return res.json([]);
+    q += ' AND c.assigned_to IS NULL';
+  } else if (view === 'escalated') {
+    if (!['admin', 'manager'].includes(req.user.role)) return res.json([]);
+    q += ' AND c.escalated = 1';
+  } else if (view === 'team') {
+    const teamId = req.user.team_id || getUserTeamId(req.user.id);
+    if (teamId) { q += ' AND c.assigned_team_id = ?'; params.push(teamId); }
   }
 
-  if (view === 'mine') { q += ' AND c.assigned_to = ?'; params.push(req.user.id); }
-  else if (view === 'unassigned') { q += ' AND c.assigned_to IS NULL'; }
-  else if (view === 'escalated') { q += ' AND c.escalated = 1'; }
-
-  q += ' ORDER BY c.created_at DESC LIMIT 500';
+  q += ' ORDER BY c.priority ASC, c.created_at DESC LIMIT 500';
 
   const complaints = db.prepare(q).all(...params);
-
   const slaMap = buildSlaMap(db.prepare('SELECT * FROM sla_configs').all());
-  const withSla = complaints.map(c => {
-    const sla = computeSla(c, slaMap[c.priority]);
-    return { ...c, sla_breached: sla ? sla.breached : false, sla_response_deadline: sla?.response.deadline ?? null, sla_resolution_deadline: sla?.resolution.deadline ?? null };
+
+  const result = complaints.map(c => {
+    const escalated = autoEscalate(c, slaMap);
+    const complaint = escalated || c;
+    const sla = computeSla(complaint, slaMap[complaint.priority]);
+    return { ...complaint, sla_breached: sla?.breached || false, sla_response_deadline: sla?.response.deadline ?? null, sla_resolution_deadline: sla?.resolution.deadline ?? null };
   });
 
-  res.json(withSla);
+  res.json(result);
 });
 
-// GET /api/complaints/export — CSV export
+// ── GET /api/complaints/export ────────────────────────────────────────────────
 router.get('/export', authMiddleware, (req, res) => {
-  const complaints = db.prepare(`
-    SELECT c.*, u.name as assigned_name
-    FROM complaints c LEFT JOIN users u ON c.assigned_to = u.id
-    ORDER BY c.created_at DESC
-  `).all();
-
-  const headers = ['ticket_id', 'status', 'priority', 'category', 'device', 'lab_type', 'region', 'submitted_by_name', 'submitted_by_contact', 'assigned_team', 'assigned_name', 'escalated', 'created_at'];
-  const rows = complaints.map(c => headers.map(h => JSON.stringify(c[h] ?? '')).join(','));
-  const csv = [headers.join(','), ...rows].join('\n');
-
+  if (!['admin', 'manager'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
+  const complaints = db.prepare(`SELECT c.*, u.name as assigned_name FROM complaints c LEFT JOIN users u ON c.assigned_to = u.id ORDER BY c.created_at DESC`).all();
+  const headers = ['ticket_id','status','priority','category','device','lab_type','region','submitted_by_name','submitted_by_contact','submitted_by_email','assigned_team','assigned_name','escalated','created_at'];
+  const csv = [headers.join(','), ...complaints.map(c => headers.map(h => JSON.stringify(c[h] ?? '')).join(','))].join('\n');
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="complaints.csv"');
   res.send(csv);
 });
 
-// GET /api/complaints/:id — single complaint detail
+// ── GET /api/complaints/:id ───────────────────────────────────────────────────
 router.get('/:id', authMiddleware, (req, res) => {
   const complaint = db.prepare(`
     SELECT c.*, u.name as assigned_name, u.email as assigned_email
@@ -147,52 +214,67 @@ router.get('/:id', authMiddleware, (req, res) => {
 
   if (!complaint) return res.status(404).json({ error: 'Not found' });
 
-  const sections = db.prepare('SELECT section_name, data FROM section_responses WHERE complaint_id = ?').all(complaint.id);
-  const signals = db.prepare('SELECT signals FROM derived_signals WHERE complaint_id = ?').get(complaint.id);
-  const statusHistory = db.prepare('SELECT * FROM status_history WHERE complaint_id = ? ORDER BY changed_at ASC').all(complaint.id);
-  const assignHistory = db.prepare('SELECT * FROM assignment_history WHERE complaint_id = ? ORDER BY assigned_at ASC').all(complaint.id);
-  const notes = db.prepare('SELECT * FROM internal_notes WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
-  const attachments = db.prepare('SELECT * FROM attachments WHERE complaint_id = ?').all(complaint.id);
+  const sections     = db.prepare('SELECT section_name, data FROM section_responses WHERE complaint_id = ?').all(complaint.id);
+  const signals      = db.prepare('SELECT signals FROM derived_signals WHERE complaint_id = ?').get(complaint.id);
+  const statusHist   = db.prepare('SELECT * FROM status_history WHERE complaint_id = ? ORDER BY changed_at ASC').all(complaint.id);
+  const assignHist   = db.prepare('SELECT * FROM assignment_history WHERE complaint_id = ? ORDER BY assigned_at ASC').all(complaint.id);
+  const notes        = db.prepare('SELECT * FROM internal_notes WHERE complaint_id = ? ORDER BY created_at DESC').all(complaint.id);
+  const attachments  = db.prepare('SELECT * FROM attachments WHERE complaint_id = ?').all(complaint.id);
 
   const slaMap = buildSlaMap(db.prepare('SELECT * FROM sla_configs').all());
-  const sla = computeSla(complaint, slaMap[complaint.priority]);
+  const escalated = autoEscalate(complaint, slaMap);
+  const final = escalated || complaint;
+  const sla = computeSla(final, slaMap[final.priority]);
 
   res.json({
-    ...complaint,
+    ...final,
     sections: sections.map(s => ({ name: s.section_name, data: JSON.parse(s.data) })),
     signals: signals ? JSON.parse(signals.signals) : {},
-    status_history: statusHistory,
-    assignment_history: assignHistory,
+    status_history: statusHist,
+    assignment_history: assignHist,
     notes,
     attachments,
     sla,
   });
 });
 
-// PATCH /api/complaints/:id — update status / assign
+// ── PATCH /api/complaints/:id ─────────────────────────────────────────────────
 router.patch('/:id', authMiddleware, (req, res) => {
   const { status, assigned_to, notes } = req.body;
   const complaint = db.prepare('SELECT * FROM complaints WHERE id = ?').get(req.params.id);
   if (!complaint) return res.status(404).json({ error: 'Not found' });
 
-  if (status && status !== complaint.status) {
-    db.prepare("UPDATE complaints SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(status, complaint.id);
-    db.prepare("INSERT INTO status_history (complaint_id, from_status, to_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)").run(complaint.id, complaint.status, status, req.user.name, notes || null);
+  const role = req.user.role;
+  const canUpdateStatus = ['admin', 'manager', 'technical_specialist'].includes(role);
+  const canAssign       = ['admin', 'manager'].includes(role);
+
+  if (status && canUpdateStatus && status !== complaint.status) {
+    db.prepare("UPDATE complaints SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(status, complaint.id);
+    db.prepare("INSERT INTO status_history (complaint_id,from_status,to_status,changed_by,notes) VALUES (?,?,?,?,?)").run(complaint.id, complaint.status, status, req.user.name, notes || null);
   }
 
-  if (assigned_to !== undefined) {
-    db.prepare("UPDATE complaints SET assigned_to = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(assigned_to || null, complaint.id);
-    db.prepare("INSERT INTO assignment_history (complaint_id, assigned_from, assigned_to, assigned_by) VALUES (?, ?, ?, ?)").run(complaint.id, complaint.assigned_to, assigned_to || null, req.user.name);
+  if (assigned_to !== undefined && canAssign) {
+    if (assigned_to && role === 'manager') {
+      // Manager can only assign within own team
+      const target = db.prepare('SELECT team_id FROM users WHERE id = ? AND active = 1').get(assigned_to);
+      const managerTeam = req.user.team_id || getUserTeamId(req.user.id);
+      if (!target || (managerTeam && target.team_id !== managerTeam)) {
+        return res.status(403).json({ error: 'Cannot assign outside your team' });
+      }
+    }
+    db.prepare("UPDATE complaints SET assigned_to=?, updated_at=CURRENT_TIMESTAMP WHERE id=?").run(assigned_to || null, complaint.id);
+    db.prepare("INSERT INTO assignment_history (complaint_id,assigned_from,assigned_to,assigned_by) VALUES (?,?,?,?)").run(complaint.id, complaint.assigned_to, assigned_to || null, req.user.name);
   }
 
   res.json({ ok: true });
 });
 
-// POST /api/complaints/:id/notes
+// ── POST /api/complaints/:id/notes ───────────────────────────────────────────
 router.post('/:id/notes', authMiddleware, (req, res) => {
   const { note } = req.body;
   if (!note?.trim()) return res.status(400).json({ error: 'Note required' });
-  db.prepare('INSERT INTO internal_notes (complaint_id, user_id, user_name, note) VALUES (?, ?, ?, ?)').run(req.params.id, req.user.id, req.user.name, note.trim());
+  if (!['admin', 'manager', 'technical_specialist'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
+  db.prepare('INSERT INTO internal_notes (complaint_id,user_id,user_name,note) VALUES (?,?,?,?)').run(req.params.id, req.user.id, req.user.name, note.trim());
   res.json({ ok: true });
 });
 

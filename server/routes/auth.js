@@ -17,19 +17,17 @@ router.post('/login', (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
   const token = jwt.sign(
-    { id: user.id, name: user.name, email: user.email, role: user.role, region: user.region },
+    { id: user.id, name: user.name, email: user.email, role: user.role, region: user.region, team_id: user.team_id || null },
     JWT_SECRET,
     { expiresIn: '24h' }
   );
 
-  res.json({
-    token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role, region: user.region },
-  });
+  const userOut = { id: user.id, name: user.name, email: user.email, role: user.role, region: user.region, team_id: user.team_id || null };
+  res.json({ token, user: userOut });
 });
 
 router.get('/me', authMiddleware, (req, res) => {
-  const user = db.prepare('SELECT id, name, email, role, region FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, name, email, role, region, team_id FROM users WHERE id = ?').get(req.user.id);
   res.json(user);
 });
 

@@ -93,11 +93,13 @@ export default function ComplaintDetail() {
   const [statusChange, setStatusChange] = useState('')
   const [assignTo, setAssignTo] = useState('')
 
-  const canEdit = ['admin', 'technical_specialist'].includes(user?.role)
+  const canUpdateStatus = ['admin', 'manager', 'technical_specialist'].includes(user?.role)
+  const canAssign       = ['admin', 'manager'].includes(user?.role)
+  const canEdit         = canUpdateStatus
 
   useEffect(() => {
     fetchComplaint()
-    if (canEdit) adminApi.getUsers().then(r => setUsers(r.data)).catch(() => {})
+    if (canAssign) adminApi.getUsers().then(r => setUsers(r.data)).catch(() => {})
   }, [id])
 
   async function fetchComplaint() {
@@ -229,7 +231,7 @@ export default function ComplaintDetail() {
         {/* Right: actions + history */}
         <div className="space-y-4">
           {/* Actions */}
-          {canEdit && (
+          {canUpdateStatus && (
             <div className="card p-4">
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('updateComplaint')}</h4>
               <div className="space-y-3">
@@ -239,13 +241,17 @@ export default function ComplaintDetail() {
                     {STATUSES.map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="label text-xs">{t('labelAssignTo')}</label>
-                  <select className="input text-sm" value={assignTo} onChange={e => setAssignTo(e.target.value)}>
-                    <option value="">{t('unassignedOption')}</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                  </select>
-                </div>
+                {canAssign && (
+                  <div>
+                    <label className="label text-xs">{t('labelAssignTo')}</label>
+                    <select className="input text-sm" value={assignTo} onChange={e => setAssignTo(e.target.value)}>
+                      <option value="">{t('unassignedOption')}</option>
+                      {users.filter(u => ['manager','technical_specialist'].includes(u.role)).map(u => (
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <button onClick={handleUpdate} disabled={saving} className="btn-primary w-full text-sm">
                   {saving ? t('saving') : t('saveChanges')}
                 </button>

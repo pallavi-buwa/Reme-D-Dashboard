@@ -107,11 +107,12 @@ export default function Dashboard() {
   const [pageSize,   setPageSize]   = useState(10)
 
   const VIEWS = [
-    { key: 'all',       label: t('viewAll') },
-    { key: 'mine',      label: t('viewMine') },
-    { key: 'unassigned',label: t('viewUnassigned') },
-    { key: 'escalated', label: t('viewEscalated') },
-  ]
+    { key: 'all',        label: t('viewAll') },
+    { key: 'mine',       label: t('viewMine') },
+    { key: 'team',       label: 'My Team',    forRoles: ['manager', 'technical_specialist'] },
+    { key: 'unassigned', label: t('viewUnassigned'), forRoles: ['admin', 'manager'] },
+    { key: 'escalated',  label: t('viewEscalated'),  forRoles: ['admin', 'manager'] },
+  ].filter(v => !v.forRoles || v.forRoles.includes(user?.role))
 
   // Reset to page 1 whenever view or filters change
   useEffect(() => {
